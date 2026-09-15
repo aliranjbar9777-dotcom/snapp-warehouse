@@ -414,8 +414,7 @@
       ورود
     </button>
     <div class="login-foot">
-      دسترسی به داشبورد ندارید؟ از مدیر انبار بخواهید برایتان حساب بسازد ·
-      <button onclick="openSetupModal(true)">تغییر اتصال Google Sheets</button>
+      دسترسی به داشبورد ندارید؟ از مدیر انبار بخواهید برایتان حساب بسازد.
     </div>
   </div>
 </div>
@@ -480,7 +479,7 @@
           <div class="role" id="user-role">—</div>
         </div>
       </div>
-      <button onclick="openSetupModal(true)">
+      <button onclick="openSetupModal(true)" id="sidebar-connect-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         اتصال Google Sheets
       </button>
@@ -791,7 +790,11 @@
    ============================================================ */
 const STORAGE_KEY = 'snapp_warehouse_api_url';
 const SESSION_KEY = 'snapp_warehouse_session';
-let API_URL = localStorage.getItem(STORAGE_KEY) || '';
+// آدرس Web App گوگل‌شیت از قبل داخل کد تنظیم شده؛ کارشناسان دیگر نیازی به
+// وارد کردن دستی این آدرس ندارند و مستقیم به صفحه‌ی ورود می‌رسند.
+// فقط نقش «مدیر» می‌تواند از داخل خودِ اپ (سایدبار) این آدرس را تغییر بدهد.
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbw0QQ6OdyvEo0R2eWV04RmT6Va6-WhosKLmUab2Tm1IF9FnZn2LZyHuh0D7R4z56xdN/exec';
+let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
 let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
 let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [] };
 let currentCategory = 'باکس';
@@ -938,6 +941,7 @@ function applyRoleUI(){
   document.getElementById('user-role').textContent = SESSION ? SESSION.role : '—';
   document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
   document.getElementById('nav-settings').style.display = isAdmin ? '' : 'none';
+  document.getElementById('sidebar-connect-btn').style.display = isAdmin ? '' : 'none';
   document.getElementById('settings-admin-area').classList.toggle('hidden', !isAdmin);
   document.getElementById('settings-admin-locked').classList.toggle('hidden', isAdmin);
 }
