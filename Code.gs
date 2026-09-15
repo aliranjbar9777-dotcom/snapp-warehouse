@@ -46,13 +46,19 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
-    let result;
 
+    // ورود: برای اینکه بعد از لاگین مجبور به یک درخواست جداگانه‌ی دیگر برای
+    // خواندن داده‌ها نباشیم (که کندی محسوسی ایجاد می‌کرد)، همین یک درخواست
+    // هم نتیجه‌ی ورود و هم کل داده‌های داشبورد را با هم برمی‌گرداند.
     if (action === 'login') {
-      result = login(body.payload);
-      // پاسخ لاگین شامل داده‌های کامل نیست، فقط اطلاعات کاربر
-      return jsonResponse({ ok: true, result: result });
-    } else if (action === 'addTransaction') {
+      const result = login(body.payload);
+      return jsonResponse({ ok: true, result: result, data: getAllData() });
+    }
+
+    // برای عملیات‌های نوشتنی، دیگر کل شیت‌ها را دوباره نمی‌خوانیم (که کند بود)؛
+    // هر تابع فقط نتیجه‌ی لازم برای به‌روزرسانی محلی در مرورگر را برمی‌گرداند.
+    let result;
+    if (action === 'addTransaction') {
       result = addTransaction(body.payload);
     } else if (action === 'addListItem') {
       result = addListItem(body.payload);
@@ -68,7 +74,7 @@ function doPost(e) {
       throw new Error('اکشن نامعتبر است');
     }
 
-    return jsonResponse({ ok: true, result: result, data: getAllData() });
+    return jsonResponse({ ok: true, result: result });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.toString() });
   }
