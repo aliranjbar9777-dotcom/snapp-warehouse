@@ -363,7 +363,9 @@
     width:100%; padding:12px; border-radius:11px; border:none; background:var(--brand); color:#fff;
     font-weight:800; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
   }
+  .login-submit svg{ width:18px; height:18px; flex:none; }
   .login-submit:hover{ background:var(--brand-dark); }
+  .login-submit:disabled{ opacity:.75; cursor:default; }
   .login-foot{ text-align:center; margin-top:18px; font-size:11.3px; color:var(--ink-faint); }
   .login-foot button{ border:none; background:none; color:var(--ink-faint); font-size:11.3px; text-decoration:underline; cursor:pointer; }
 
@@ -821,22 +823,56 @@ function saveApiUrl(){
   boot();
 }
 
-async function apiCall(action, payload){
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
-    body: JSON.stringify({ action, payload })
-  });
-  const json = await res.json();
+// یک تابع کمکی برای پارس امن JSON: اگر پاسخ HTML یا ناقص بود (مثلاً به‌خاطر
+// راه‌اندازی سرد Apps Script)، به‌جای کرش کردن، خطای خوانا برمی‌گرداند.
+function safeParseJson(text){
+  try{ return JSON.parse(text); }
+  catch(e){ return null; }
+}
+
+async function apiCall(action, payload, attempt){
+  attempt = attempt || 1;
+  let res, text;
+  try{
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
+      body: JSON.stringify({ action, payload })
+    });
+    text = await res.text();
+  }catch(networkErr){
+    if(attempt < 3){ await sleep(700 * attempt); return apiCall(action, payload, attempt + 1); }
+    throw new Error('اتصال به سرور برقرار نشد. اینترنت یا آدرس Google Sheets را بررسی کنید.');
+  }
+  const json = safeParseJson(text);
+  if(!json){
+    // گوگل اسکریپت گاهی موقع «راه‌اندازی سرد» یا بلافاصله بعد از دیپلوی، پاسخ HTML موقت می‌دهد.
+    // یک یا دو بار خودکار دوباره تلاش می‌کنیم قبل از نمایش خطا به کاربر.
+    if(attempt < 3){ await sleep(700 * attempt); return apiCall(action, payload, attempt + 1); }
+    throw new Error('پاسخ نامعتبری از سرور دریافت شد. چند لحظه صبر کنید و دوباره تلاش کنید.');
+  }
   if(!json.ok) throw new Error(json.error || 'خطا در ارتباط با سرور');
   return json;
 }
-async function apiGet(){
-  const res = await fetch(API_URL + '?action=getData');
-  const json = await res.json();
+async function apiGet(attempt){
+  attempt = attempt || 1;
+  let res, text;
+  try{
+    res = await fetch(API_URL + '?action=getData');
+    text = await res.text();
+  }catch(networkErr){
+    if(attempt < 3){ await sleep(700 * attempt); return apiGet(attempt + 1); }
+    throw new Error('اتصال به سرور برقرار نشد. اینترنت یا آدرس Google Sheets را بررسی کنید.');
+  }
+  const json = safeParseJson(text);
+  if(!json){
+    if(attempt < 3){ await sleep(700 * attempt); return apiGet(attempt + 1); }
+    throw new Error('پاسخ نامعتبری از سرور دریافت شد. چند لحظه صبر کنید و دوباره تلاش کنید.');
+  }
   if(!json.ok) throw new Error(json.error || 'خطا در دریافت اطلاعات');
   return json.data;
 }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 async function apiPost(action, payload){
   const json = await apiCall(action, payload);
   if(json.data) DATA = json.data;
