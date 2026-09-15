@@ -1,44 +1,1468 @@
-// سرویس‌ورکر ساده فقط برای «نصب‌پذیر» شدن داشبورد (Add to Home Screen) و
-// بارگذاری سریع‌تر پوسته‌ی اپ. داده‌های Google Sheets همیشه به‌صورت زنده
-// (fetch مستقیم) خوانده می‌شوند و در این کش ذخیره نمی‌شوند.
-
-const CACHE_NAME = 'snapp-warehouse-shell-v1';
-const SHELL_FILES = [
-  './index.html',
-  './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(()=>{})
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // هرگز درخواست‌های مربوط به Google Apps Script / Google Sheets را کش نکن؛
-  // داده‌ی انبار همیشه باید زنده و به‌روز باشد.
-  if (url.hostname.includes('script.google.com') || url.hostname.includes('googleusercontent.com')) {
-    return; // بگذار مرورگر عادی fetch کند
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>انبار اسنپ | داشبورد ورود و خروج تجهیزات</title>
+<meta name="theme-color" content="#00C56C">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    /* پالت رنگی برگرفته از هویت بصری اسنپ: سبز پررنگ روی زمینه‌ی روشن و خنثی */
+    --bg:#F2F4F1;
+    --surface:#FFFFFF;
+    --surface-2:#E9F8EF;
+    --ink:#14201A;
+    --ink-muted:#5E6B60;
+    --ink-faint:#93A091;
+    --line:#E0E6DD;
+    --brand:#00C56C;       /* سبز اصلی اسنپ */
+    --brand-dark:#00A85D;
+    --brand-darker:#008049;
+    --brand-tint:#E3FAEE;
+    --in:#00A85D;
+    --in-tint:#E3FAEE;
+    --out:#C4681F;
+    --out-tint:#FBEBDD;
+    --danger:#C0392B;
+    --shadow: 0 1px 2px rgba(20,32,26,.04), 0 8px 24px -12px rgba(20,32,26,.12);
+    --radius-lg:18px;
+    --radius-md:12px;
+    --radius-sm:8px;
   }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:'Vazirmatn', sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background: var(--brand-tint); color:var(--brand-darker); }
+  button, input, select{ font-family:inherit; }
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+  .hidden{ display:none !important; }
 
-  // فقط فایل‌های خودِ پوسته‌ی اپ را از کش سرو کن (Cache First)
-  if (event.request.method === 'GET' && url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request))
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:246px;
+    flex:none;
+    background:var(--surface);
+    border-inline-start:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    padding:22px 16px;
+    position:sticky;
+    top:0;
+    height:100vh;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:6px 8px 22px;
+  }
+  .brand-mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(155deg, var(--brand), var(--brand-darker));
+    display:flex;align-items:center;justify-content:center;
+    flex:none;
+  }
+  .brand-mark svg{width:20px;height:20px;}
+  .brand-text .t1{font-weight:800;font-size:15px;line-height:1.3;}
+  .brand-text .t2{font-size:11.5px;color:var(--ink-muted);}
+
+  nav.nav{ display:flex; flex-direction:column; gap:3px; margin-top:6px;}
+  .nav-item{
+    display:flex; align-items:center; gap:11px;
+    padding:10px 12px; border-radius:10px;
+    color:var(--ink-muted); font-size:13.5px; font-weight:600;
+    cursor:pointer; border:none; background:none; width:100%; text-align:right;
+    transition:background .15s, color .15s;
+  }
+  .nav-item svg{width:18px;height:18px;flex:none;}
+  .nav-item:hover{ background:var(--surface-2); color:var(--ink); }
+  .nav-item.active{ background:var(--brand-tint); color:var(--brand-darker); }
+
+  .sidebar-foot{
+    margin-top:auto;
+    padding-top:14px;
+    border-top:1px solid var(--line);
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .user-chip{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 10px; border-radius:10px; background:var(--surface-2);
+  }
+  .user-avatar{
+    width:32px;height:32px;border-radius:50%;flex:none;
+    background:linear-gradient(155deg, var(--brand), var(--brand-darker));
+    color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;
+  }
+  .user-meta{ min-width:0; }
+  .user-meta .name{ font-size:12.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-meta .role{ font-size:10.5px; color:var(--ink-muted); }
+  .sidebar-foot button{
+    width:100%;
+    display:flex;align-items:center;gap:10px;
+    padding:9px 12px;border-radius:10px;border:1px solid var(--line);
+    background:none;color:var(--ink-muted);font-size:12.5px;font-weight:600;cursor:pointer;
+  }
+  .sidebar-foot button:hover{ background:var(--surface-2); }
+  .sidebar-foot svg{width:15px;height:15px;}
+
+  /* ---------- Main ---------- */
+  .main{ flex:1; min-width:0; padding:26px 30px 60px; }
+  .topbar{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    margin-bottom:22px; flex-wrap:wrap; gap:14px;
+  }
+  .topbar h1{ margin:0 0 4px; font-size:21px; font-weight:800; }
+  .topbar p{ margin:0; color:var(--ink-muted); font-size:13px; }
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:700;
+    border:1px solid transparent; cursor:pointer; white-space:nowrap;
+  }
+  .btn svg{width:16px;height:16px;}
+  .btn-brand{ background:var(--brand); color:#fff; }
+  .btn-brand:hover{ background:var(--brand-dark); }
+  .btn-ghost{ background:var(--surface); border-color:var(--line); color:var(--ink); }
+  .btn-ghost:hover{ background:var(--surface-2); }
+  .btn-danger-ghost{ background:#fff; border-color:#F1D6D0; color:var(--danger); }
+  .btn-danger-ghost:hover{ background:#FBEDEA; }
+  .btn:disabled{ opacity:.6; cursor:default; }
+
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- Stat cards ---------- */
+  .stat-grid{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;
+  }
+  .stat-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:18px 18px 16px; box-shadow:var(--shadow);
+  }
+  .stat-card .row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .stat-icon{
+    width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  }
+  .stat-icon svg{width:17px;height:17px;}
+  .stat-card .label{ font-size:12.5px; color:var(--ink-muted); font-weight:600; }
+  .stat-card .value{ font-size:26px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .stat-card .sub{ font-size:11.5px; color:var(--ink-faint); margin-top:4px; }
+  .stat-total .stat-icon{ background:var(--brand-tint); color:var(--brand-darker); }
+  .stat-in .stat-icon{ background:var(--in-tint); color:var(--in); }
+  .stat-out .stat-icon{ background:var(--out-tint); color:var(--out); }
+  .stat-cities .stat-icon{ background:var(--surface-2); color:var(--ink); }
+
+  /* ---------- Section shell ---------- */
+  .panel{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:20px; box-shadow:var(--shadow); margin-bottom:18px;
+  }
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:10px; flex-wrap:wrap;}
+  .panel-head h2{ margin:0; font-size:15.5px; font-weight:800; }
+  .panel-head .hint{ font-size:12px; color:var(--ink-muted); }
+
+  .two-col{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; align-items:start; }
+
+  /* ---------- City cards (crate visual) ---------- */
+  .city-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+  .city-card{
+    border:1px solid var(--line); border-radius:var(--radius-md); padding:14px;
+    background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 130%);
+  }
+  .city-card .name{ font-weight:700; font-size:13.5px; margin-bottom:2px; }
+  .city-card .amount{ font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; margin-bottom:8px;}
+  .city-card .amount span{ font-size:11px; font-weight:600; color:var(--ink-muted); }
+  .bar-track{ height:7px; border-radius:6px; background:var(--surface-2); overflow:hidden; margin-bottom:9px;}
+  .bar-fill{ height:100%; border-radius:6px; background:linear-gradient(90deg, var(--brand), var(--brand-darker)); }
+  .crate-row{ display:flex; gap:3px; flex-wrap:wrap; }
+  .crate{ width:9px;height:9px;border-radius:2px; background:var(--brand); opacity:.85; }
+  .crate.dim{ background:var(--line); }
+
+  /* ---------- Recent list ---------- */
+  .recent-list{ display:flex; flex-direction:column; }
+  .recent-row{
+    display:flex; align-items:center; gap:12px; padding:10px 2px;
+    border-bottom:1px solid var(--line); font-size:12.8px;
+  }
+  .recent-row:last-child{ border-bottom:none; }
+  .op-pill{
+    flex:none; font-size:11px; font-weight:700; padding:4px 9px; border-radius:100px;
+  }
+  .op-pill.IN{ background:var(--in-tint); color:var(--in); }
+  .op-pill.OUT{ background:var(--out-tint); color:var(--out); }
+  .recent-row .meta{ flex:1; min-width:0; }
+  .recent-row .meta .main{ font-weight:700; }
+  .recent-row .meta .sub{ color:var(--ink-muted); font-size:11.5px; }
+  .recent-row .qty{ flex:none; font-weight:800; font-variant-numeric:tabular-nums; }
+  .recent-row .time{ flex:none; color:var(--ink-faint); font-size:11px; }
+
+  /* ---------- Form ---------- */
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field.full{ grid-column:1 / -1; }
+  .field label{ font-size:12.5px; font-weight:700; color:var(--ink-muted); }
+  .field select, .field input{
+    padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
+    font-size:13.5px; color:var(--ink); outline:none; transition:border-color .15s, background .15s;
+  }
+  .field select:focus, .field input:focus{ border-color:var(--brand); background:#fff; }
+  .op-toggle{ display:flex; gap:8px; }
+  .op-toggle button{
+    flex:1; padding:11px 10px; border-radius:10px; border:1.5px solid var(--line);
+    background:var(--bg); font-weight:700; font-size:13px; cursor:pointer; color:var(--ink-muted);
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  .op-toggle button svg{ width:15px;height:15px; }
+  .op-toggle button.sel-in.active{ border-color:var(--in); background:var(--in-tint); color:var(--in); }
+  .op-toggle button.sel-out.active{ border-color:var(--out); background:var(--out-tint); color:var(--out); }
+  .cat-toggle{ display:flex; gap:8px; margin-bottom:16px; }
+  .cat-toggle button{
+    padding:8px 14px; border-radius:100px; border:1.5px solid var(--line); background:var(--bg);
+    font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer;
+  }
+  .cat-toggle button.active{ border-color:var(--brand); background:var(--brand-tint); color:var(--brand-darker); }
+
+  .stock-preview{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface-2); border-radius:10px; padding:12px 14px; margin-bottom:16px;
+    font-size:12.5px; color:var(--ink-muted);
+  }
+  .stock-preview b{ font-size:16px; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+  .form-actions{ margin-top:18px; display:flex; justify-content:flex-end; gap:10px; }
+
+  /* ---------- Table ---------- */
+  .filters-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .filters-row select, .filters-row input{
+    padding:9px 12px; border-radius:9px; border:1px solid var(--line); background:var(--bg);
+    font-size:12.8px; color:var(--ink); outline:none;
+  }
+  .filters-row input[type="text"]{ min-width:200px; flex:1; }
+  table{ width:100%; border-collapse:collapse; font-size:12.8px; }
+  thead th{
+    text-align:right; font-weight:700; color:var(--ink-muted); font-size:11.5px;
+    padding:9px 10px; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  tbody td{ padding:10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  tbody tr:hover{ background:var(--surface-2); }
+  .empty-state{ text-align:center; padding:40px 10px; color:var(--ink-muted); font-size:13px; }
+  .empty-state svg{ width:34px;height:34px; margin-bottom:10px; opacity:.5; }
+
+  /* ---------- Settings lists ---------- */
+  .settings-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .list-card h3{ font-size:13px; margin:0 0 10px; font-weight:800; }
+  .list-add{ display:flex; gap:6px; margin-bottom:10px; }
+  .list-add input{ flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--line); font-size:12.5px; background:var(--bg);}
+  .list-add button{
+    border:none; background:var(--brand); color:#fff; width:34px; border-radius:8px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .chip-list{ display:flex; flex-direction:column; gap:5px; max-height:220px; overflow:auto; }
+  .chip{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:7px 10px; border-radius:8px; background:var(--surface-2); font-size:12.3px;
+  }
+  .chip button{ border:none; background:none; color:var(--ink-faint); cursor:pointer; padding:2px; }
+  .chip button:hover{ color:var(--danger); }
+
+  .admin-only-note{
+    display:flex; align-items:center; gap:10px; padding:14px 16px; border-radius:12px;
+    background:var(--surface-2); color:var(--ink-muted); font-size:12.8px;
+  }
+  .admin-only-note svg{ width:18px;height:18px; flex:none; }
+
+  .user-row{
+    display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid var(--line); font-size:12.8px;
+  }
+  .user-row:last-child{ border-bottom:none; }
+  .user-row .badge{ font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:100px; background:var(--brand-tint); color:var(--brand-darker); flex:none;}
+  .user-row .badge.staff{ background:var(--surface-2); color:var(--ink-muted); }
+  .user-row .uname{ flex:1; min-width:0; }
+  .user-row .uname b{ display:block; font-size:12.8px; }
+  .user-row .uname span{ color:var(--ink-muted); font-size:11.3px; }
+  .user-row .del-btn{ border:none; background:none; color:var(--ink-faint); cursor:pointer; }
+  .user-row .del-btn:hover{ color:var(--danger); }
+
+  /* ---------- Toast ---------- */
+  #toast-wrap{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; gap:8px; align-items:center;}
+  .toast{
+    display:flex; align-items:center; gap:9px; padding:12px 18px; border-radius:11px;
+    background:var(--ink); color:#fff; font-size:13px; font-weight:600; box-shadow:0 10px 30px -8px rgba(0,0,0,.4);
+    animation:toastIn .25s ease;
+  }
+  .toast.error{ background:var(--danger); }
+  .toast.success svg{ color:var(--brand); width:16px;height:16px; flex:none;}
+  .toast.error svg{ color:#fff; width:16px;height:16px; flex:none;}
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ---------- Setup modal ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(20,32,26,.55); display:flex; align-items:center; justify-content:center;
+    z-index:300; padding:20px;
+  }
+  .modal{
+    background:#fff; border-radius:var(--radius-lg); padding:26px; width:100%; max-width:460px;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.35);
+  }
+  .modal h2{ margin:0 0 8px; font-size:17px; font-weight:800; }
+  .modal p{ margin:0 0 16px; font-size:13px; color:var(--ink-muted); line-height:1.8; }
+  .modal input{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
+    font-size:13px; margin-bottom:12px; outline:none;
+  }
+  .modal input:focus{ border-color:var(--brand); }
+  .modal .row{ display:flex; justify-content:flex-end; gap:8px; }
+  .loading-spin{
+    width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4); border-top-color:#fff;
+    animation:spin .7s linear infinite; display:inline-block;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  /* ---------- Login screen ---------- */
+  .login-screen{
+    position:fixed; inset:0; z-index:250; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(120% 120% at 20% 10%, #E3FAEE 0%, var(--bg) 55%); padding:20px;
+  }
+  .login-card{
+    width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
+    border-radius:22px; padding:34px 30px; box-shadow:0 30px 70px -25px rgba(0,80,40,.25);
+  }
+  .login-mark{
+    width:56px;height:56px;border-radius:16px; margin:0 auto 18px;
+    background:linear-gradient(155deg, var(--brand), var(--brand-darker));
+    display:flex;align-items:center;justify-content:center;
+  }
+  .login-mark svg{ width:28px;height:28px; }
+  .login-card h1{ text-align:center; font-size:18px; font-weight:800; margin:0 0 4px; }
+  .login-card p.sub{ text-align:center; font-size:12.5px; color:var(--ink-muted); margin:0 0 24px; }
+  .login-field{ margin-bottom:14px; }
+  .login-field label{ font-size:12.3px; font-weight:700; color:var(--ink-muted); display:block; margin-bottom:6px; }
+  .login-field input{
+    width:100%; padding:12px 13px; border-radius:11px; border:1.5px solid var(--line); background:var(--bg);
+    font-size:14px; outline:none;
+  }
+  .login-field input:focus{ border-color:var(--brand); background:#fff; }
+  .login-error{
+    background:#FBEDEA; color:var(--danger); font-size:12.3px; padding:10px 12px; border-radius:9px; margin-bottom:14px; display:none;
+  }
+  .login-submit{
+    width:100%; padding:12px; border-radius:11px; border:none; background:var(--brand); color:#fff;
+    font-weight:800; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .login-submit svg{ width:18px; height:18px; flex:none; }
+  .login-submit:hover{ background:var(--brand-dark); }
+  .login-submit:disabled{ opacity:.75; cursor:default; }
+  .login-foot{ text-align:center; margin-top:18px; font-size:11.3px; color:var(--ink-faint); }
+  .login-foot button{ border:none; background:none; color:var(--ink-faint); font-size:11.3px; text-decoration:underline; cursor:pointer; }
+
+  .chart-box{ height:230px; }
+
+  @media (max-width:980px){
+    .stat-grid{ grid-template-columns:repeat(2,1fr); }
+    .two-col{ grid-template-columns:1fr; }
+    .form-grid{ grid-template-columns:1fr; }
+    .settings-grid{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:720px){
+    .app{ flex-direction:column; }
+    .sidebar{ position:static; height:auto; width:100%; flex-direction:row; align-items:center; overflow-x:auto; padding:12px 14px; }
+    .brand{ padding:0; margin-inline-end:10px; }
+    nav.nav{ flex-direction:row; margin-top:0; }
+    .nav-item span{ display:none; }
+    .sidebar-foot{ display:none; }
+    .main{ padding:18px 16px 50px; }
+    .stat-grid{ grid-template-columns:1fr 1fr; }
+    .settings-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== BOOT LOADING (perceived-speed overlay) ===================== -->
+<div id="boot-loading" class="login-screen">
+  <div style="text-align:center;">
+    <div class="login-mark" style="margin:0 auto 16px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink-muted);font-size:13px;font-weight:700;">
+      <span class="loading-spin" style="border-top-color:var(--brand);border-color:rgba(0,197,108,.25);"></span>
+      <span id="boot-loading-text">در حال اتصال به انبار…</span>
+    </div>
+    <button id="boot-retry-btn" class="btn btn-brand hidden" style="margin-top:18px;" onclick="location.reload()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      تلاش مجدد
+    </button>
+  </div>
+</div>
+
+<!-- ===================== LOGIN SCREEN ===================== -->
+<div id="login-screen" class="login-screen hidden">
+  <div class="login-card">
+    <div class="login-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+    </div>
+    <h1>ورود به انبار اسنپ</h1>
+    <p class="sub">با نام کاربری و رمز عبوری که کارشناس مدیر سیستم برای شما ساخته، وارد شوید.</p>
+    <div class="login-error" id="login-error"></div>
+    <div class="login-field">
+      <label>نام کاربری</label>
+      <input id="login-username" type="text" autocomplete="username" placeholder="مثلاً: ali.rezaei" />
+    </div>
+    <div class="login-field">
+      <label>رمز عبور</label>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" />
+    </div>
+    <button class="login-submit" id="login-submit-btn" onclick="doLogin()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+      ورود
+    </button>
+    <div class="login-foot">
+      دسترسی به داشبورد ندارید؟ از مدیر انبار بخواهید برایتان حساب بسازد.
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SETUP MODAL ===================== -->
+<div id="setup-modal" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <h2>اتصال به Google Sheets</h2>
+    <p>آدرس Web App دیپلوی‌شده‌ی Google Apps Script (فایل Code.gs) را اینجا وارد کنید. این آدرس تنها یک‌بار لازم است و در همین مرورگر ذخیره می‌شود.</p>
+    <input id="setup-url-input" type="text" placeholder="https://script.google.com/macros/s/XXXX/exec" />
+    <div class="row">
+      <button class="btn btn-brand" onclick="saveApiUrl()">اتصال و بارگذاری</button>
+    </div>
+  </div>
+</div>
+
+<div class="app hidden" id="app-shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="t1">انبار اسنپ</div>
+        <div class="t2">مدیریت ورود و خروج تجهیزات</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        <span>نمای کلی</span>
+      </button>
+      <button class="nav-item" data-view="entry">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        <span>ثبت تراکنش</span>
+      </button>
+      <button class="nav-item" data-view="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l4 2"/></svg>
+        <span>تاریخچه</span>
+      </button>
+      <button class="nav-item" data-view="by-city">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg>
+        <span>موجودی شهرها</span>
+      </button>
+      <button class="nav-item" data-view="by-type">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg>
+        <span>موجودی نوع و رنگ</span>
+      </button>
+      <button class="nav-item" data-view="settings" id="nav-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        <span>تنظیمات و تجهیزات</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">؟</div>
+        <div class="user-meta">
+          <div class="name" id="user-name">—</div>
+          <div class="role" id="user-role">—</div>
+        </div>
+      </div>
+      <button onclick="openSetupModal(true)" id="sidebar-connect-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        اتصال Google Sheets
+      </button>
+      <button onclick="logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        خروج از حساب
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ===================== DASHBOARD ===================== -->
+    <section class="view active" id="view-dashboard">
+      <div class="topbar">
+        <div>
+          <h1>نمای کلی انبار</h1>
+          <p id="dash-updated">در حال بارگذاری اطلاعات از Google Sheets…</p>
+        </div>
+        <button class="btn btn-brand" onclick="switchView('entry')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+          ثبت تراکنش جدید
+        </button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card stat-total">
+          <div class="row">
+            <span class="label">کل موجودی انبار</span>
+            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg></span>
+          </div>
+          <div class="value" id="stat-total">۰</div>
+          <div class="sub">مجموع تمام تجهیزات، همه‌ی شهرها</div>
+        </div>
+        <div class="stat-card stat-in">
+          <div class="row">
+            <span class="label">مجموع ورود</span>
+            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></span>
+          </div>
+          <div class="value" id="stat-in">۰</div>
+          <div class="sub">تعداد کل باکس/تجهیز وارد شده</div>
+        </div>
+        <div class="stat-card stat-out">
+          <div class="row">
+            <span class="label">مجموع خروج</span>
+            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+          </div>
+          <div class="value" id="stat-out">۰</div>
+          <div class="sub">تعداد کل باکس/تجهیز خارج شده</div>
+        </div>
+        <div class="stat-card stat-cities">
+          <div class="row">
+            <span class="label">تعداد شهرها</span>
+            <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg></span>
+          </div>
+          <div class="value" id="stat-cities">۰</div>
+          <div class="sub">شهرهای دارای موجودی فعال</div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>موجودی به تفکیک شهر</h2>
+            <span class="hint">هر مربع کوچک ≈ یک واحد از میانگین موجودی</span>
+          </div>
+          <div class="city-grid" id="dash-city-grid"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>آخرین تراکنش‌ها</h2>
+            <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('history')">مشاهده همه</span>
+          </div>
+          <div class="recent-list" id="dash-recent-list"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>توزیع موجودی بر اساس رنگ تجهیزات</h2>
+          <span class="hint">رنگ هر بخش نمودار همان رنگی است که موقع ثبت انتخاب شده</span>
+        </div>
+        <div class="chart-box"><canvas id="dash-type-chart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ===================== ENTRY FORM ===================== -->
+    <section class="view" id="view-entry">
+      <div class="topbar">
+        <div>
+          <h1>ثبت ورود / خروج تجهیزات</h1>
+          <p>شهر ← نوع تجهیز ← رنگ ← نام شخص ← نوع عملیات ← تعداد</p>
+        </div>
+      </div>
+
+      <div class="panel" style="max-width:640px;">
+        <div class="cat-toggle" id="cat-toggle">
+          <button class="active" data-cat="باکس">📦 باکس</button>
+          <button data-cat="سایر تجهیزات">🧰 سایر تجهیزات</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label>شهر</label>
+            <select id="f-city"></select>
+          </div>
+          <div class="field" id="f-itemtype-wrap">
+            <label id="f-itemtype-label">نوع باکس</label>
+            <select id="f-itemtype"></select>
+          </div>
+          <div class="field" id="f-color-wrap">
+            <label>رنگ باکس</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span id="f-color-swatch" style="width:22px;height:22px;border-radius:7px;flex:none;border:1.5px solid var(--line);"></span>
+              <select id="f-color" style="flex:1;"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>نام شخص / راننده</label>
+            <input id="f-person" type="text" placeholder="مثلاً: علی رضایی" />
+          </div>
+          <div class="field full">
+            <label>نوع عملیات</label>
+            <div class="op-toggle" id="op-toggle">
+              <button type="button" class="sel-in active" data-op="IN">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                ورود به انبار
+              </button>
+              <button type="button" class="sel-out" data-op="OUT">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                خروج از انبار
+              </button>
+            </div>
+          </div>
+          <div class="field full">
+            <label>تعداد</label>
+            <input id="f-qty" type="number" min="1" placeholder="مثلاً: ۱۰" />
+          </div>
+        </div>
+
+        <div class="stock-preview" style="margin-top:16px;">
+          <span>موجودی فعلی این آیتم در این شهر</span>
+          <b id="stock-preview-val">—</b>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-ghost" type="button" onclick="resetForm()">پاک کردن فرم</button>
+          <button class="btn btn-brand" type="button" onclick="submitTransaction()" id="submit-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            ثبت تراکنش
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== HISTORY ===================== -->
+    <section class="view" id="view-history">
+      <div class="topbar">
+        <div>
+          <h1>تاریخچه ورود و خروج</h1>
+          <p>جستجو و فیلتر تمام تراکنش‌های ثبت‌شده</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="filters-row">
+          <input type="text" id="hf-search" placeholder="جستجو بر اساس نام شخص یا نوع تجهیز…" oninput="renderHistory()" />
+          <select id="hf-city" onchange="renderHistory()"><option value="">همه‌ی شهرها</option></select>
+          <select id="hf-op" onchange="renderHistory()">
+            <option value="">همه‌ی عملیات‌ها</option>
+            <option value="IN">فقط ورود</option>
+            <option value="OUT">فقط خروج</option>
+          </select>
+          <select id="hf-cat" onchange="renderHistory()">
+            <option value="">همه‌ی دسته‌ها</option>
+            <option value="باکس">فقط باکس</option>
+            <option value="سایر تجهیزات">فقط سایر تجهیزات</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>تاریخ و ساعت</th><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th>
+                <th>نام شخص/راننده</th><th>ثبت‌کننده</th><th>عملیات</th><th>تعداد</th><th>موجودی پس از ثبت</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+          <div class="empty-state" id="history-empty" style="display:none;">هیچ تراکنشی با این فیلترها یافت نشد.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== BY CITY ===================== -->
+    <section class="view" id="view-by-city">
+      <div class="topbar">
+        <div>
+          <h1>موجودی به تفکیک شهر</h1>
+          <p>مجموع تمام تجهیزات هر شهر</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="city-grid" id="city-full-grid"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>مقایسه‌ی شهرها</h2></div>
+        <div class="chart-box"><canvas id="city-chart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ===================== BY TYPE/COLOR ===================== -->
+    <section class="view" id="view-by-type">
+      <div class="topbar">
+        <div>
+          <h1>موجودی به تفکیک نوع و رنگ</h1>
+          <p>ریز موجودی هر نوع تجهیز در هر شهر</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="filters-row">
+          <input type="text" id="tf-search" placeholder="جستجو بر اساس نوع تجهیز…" oninput="renderByType()" />
+          <select id="tf-city" onchange="renderByType()"><option value="">همه‌ی شهرها</option></select>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th><th>موجودی فعلی</th></tr>
+            </thead>
+            <tbody id="bytype-tbody"></tbody>
+          </table>
+          <div class="empty-state" id="bytype-empty" style="display:none;">موردی یافت نشد.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== SETTINGS ===================== -->
+    <section class="view" id="view-settings">
+      <div class="topbar">
+        <div>
+          <h1>تنظیمات و تعریف تجهیزات</h1>
+          <p>مدیریت لیست شهرها، انواع باکس، رنگ‌ها، سایر تجهیزات و کاربران</p>
+        </div>
+      </div>
+
+      <div class="panel" style="max-width:420px;">
+        <div class="panel-head"><h2>تغییر رمز عبور من</h2></div>
+        <div class="field" style="margin-bottom:10px;"><label>رمز عبور فعلی</label><input id="pw-old" type="password" /></div>
+        <div class="field" style="margin-bottom:14px;"><label>رمز عبور جدید</label><input id="pw-new" type="password" /></div>
+        <button class="btn btn-brand" onclick="changeMyPassword()">تغییر رمز عبور</button>
+      </div>
+
+      <div id="settings-admin-locked" class="panel hidden">
+        <div class="admin-only-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          مدیریت لیست‌ها و کاربران فقط برای نقش «مدیر» در دسترس است. برای تغییر، با مدیر انبار خود تماس بگیرید.
+        </div>
+      </div>
+
+      <div id="settings-admin-area">
+        <div class="settings-grid">
+          <div class="panel list-card">
+            <h3>شهرها</h3>
+            <div class="list-add"><input id="add-city" placeholder="نام شهر جدید" /><button onclick="addList('city')">+</button></div>
+            <div class="chip-list" id="list-city"></div>
+          </div>
+          <div class="panel list-card">
+            <h3>انواع باکس</h3>
+            <div class="list-add"><input id="add-boxType" placeholder="نوع باکس جدید" /><button onclick="addList('boxType')">+</button></div>
+            <div class="chip-list" id="list-boxType"></div>
+          </div>
+          <div class="panel list-card">
+            <h3>رنگ‌ها</h3>
+            <div class="list-add"><input id="add-color" placeholder="رنگ جدید" /><button onclick="addList('color')">+</button></div>
+            <div class="chip-list" id="list-color"></div>
+          </div>
+          <div class="panel list-card">
+            <h3>سایر تجهیزات</h3>
+            <div class="list-add"><input id="add-other" placeholder="نام تجهیز جدید" /><button onclick="addList('other')">+</button></div>
+            <div class="chip-list" id="list-other"></div>
+          </div>
+        </div>
+
+        <div class="panel" style="max-width:520px;">
+          <div class="panel-head"><h2>مدیریت کارشناسان و کاربران</h2></div>
+          <div class="form-grid" style="margin-bottom:14px;">
+            <div class="field"><label>نام کاربری</label><input id="nu-username" placeholder="مثلاً: sara.ahmadi" /></div>
+            <div class="field"><label>رمز عبور اولیه</label><input id="nu-password" type="password" placeholder="حداقل ۶ کاراکتر" /></div>
+            <div class="field"><label>نام و نام خانوادگی</label><input id="nu-fullname" placeholder="مثلاً: سارا احمدی" /></div>
+            <div class="field">
+              <label>نقش</label>
+              <select id="nu-role">
+                <option value="کارشناس">کارشناس</option>
+                <option value="مدیر">مدیر</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-brand" onclick="createUser()">ساخت کاربر جدید</button>
+
+          <div style="margin-top:18px;" id="user-list"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+const STORAGE_KEY = 'snapp_warehouse_api_url';
+const SESSION_KEY = 'snapp_warehouse_session';
+// آدرس Web App گوگل‌شیت از قبل داخل کد تنظیم شده؛ کارشناسان دیگر نیازی به
+// وارد کردن دستی این آدرس ندارند و مستقیم به صفحه‌ی ورود می‌رسند.
+// فقط نقش «مدیر» می‌تواند از داخل خودِ اپ (سایدبار) این آدرس را تغییر بدهد.
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbw0QQ6OdyvEo0R2eWV04RmT6Va6-WhosKLmUab2Tm1IF9FnZn2LZyHuh0D7R4z56xdN/exec';
+let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
+let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
+let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [] };
+let currentCategory = 'باکس';
+let currentOp = 'IN';
+let charts = {};
+
+/* ============================================================
+   HASHING (client-side SHA-256, never send plain passwords)
+   ============================================================ */
+async function sha256Hex(str){
+  const enc = new TextEncoder().encode(str);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+/* ============================================================
+   SETUP / CONNECTION
+   ============================================================ */
+function openSetupModal(prefill){
+  document.getElementById('setup-modal').style.display = 'flex';
+  if(prefill) document.getElementById('setup-url-input').value = API_URL;
+}
+function saveApiUrl(){
+  const val = document.getElementById('setup-url-input').value.trim();
+  if(!val){ toast('لطفاً آدرس معتبر وارد کنید', true); return; }
+  API_URL = val;
+  localStorage.setItem(STORAGE_KEY, val);
+  document.getElementById('setup-modal').style.display = 'none';
+  boot();
+}
+
+// یک تابع کمکی برای پارس امن JSON: اگر پاسخ HTML یا ناقص بود (مثلاً به‌خاطر
+// راه‌اندازی سرد Apps Script)، به‌جای کرش کردن، null برمی‌گرداند.
+function safeParseJson(text){
+  try{ return JSON.parse(text); }
+  catch(e){ return null; }
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+// options.retryOnBadResponse: فقط برای عملیات‌های «فقط‌خواندنی» (getData، login)
+// true بگذارید. برای عملیات‌هایی که چیزی می‌نویسند (مثل ثبت تراکنش)، هرگز
+// روی «پاسخ نامعتبر» دوباره ارسال نمی‌کنیم — چون ممکن است سرور واقعاً درخواست
+// را اجرا کرده باشد و ارسال دوباره باعث ثبت دوبار همان تراکنش شود. فقط وقتی
+// خودِ اتصال شبکه اصلاً برقرار نشده (fetch حتی جواب نگرفته)، تلاش مجدد امن است
+// چون تقریباً مطمئنیم درخواست به سرور نرسیده.
+async function apiCall(action, payload, options){
+  options = options || {};
+  const retryOnBadResponse = !!options.retryOnBadResponse;
+  const maxNetworkAttempts = 3;
+  let attempt = 0;
+  while(true){
+    attempt++;
+    let text;
+    try{
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
+        body: JSON.stringify({ action, payload })
+      });
+      text = await res.text();
+    }catch(networkErr){
+      if(attempt < maxNetworkAttempts){ await sleep(500 * attempt); continue; }
+      throw new Error('اتصال به سرور برقرار نشد. اینترنت یا آدرس Google Sheets را بررسی کنید.');
+    }
+    const json = safeParseJson(text);
+    if(!json){
+      if(retryOnBadResponse && attempt < maxNetworkAttempts){ await sleep(500 * attempt); continue; }
+      throw new Error('پاسخ نامعتبری از سرور دریافت شد. لطفاً دوباره تلاش کنید.');
+    }
+    if(!json.ok) throw new Error(json.error || 'خطا در ارتباط با سرور');
+    return json;
+  }
+}
+async function apiGet(){
+  let attempt = 0;
+  const maxAttempts = 3;
+  while(true){
+    attempt++;
+    let text;
+    try{
+      const res = await fetch(API_URL + '?action=getData');
+      text = await res.text();
+    }catch(networkErr){
+      if(attempt < maxAttempts){ await sleep(500 * attempt); continue; }
+      throw new Error('اتصال به سرور برقرار نشد. اینترنت یا آدرس Google Sheets را بررسی کنید.');
+    }
+    const json = safeParseJson(text);
+    if(!json){
+      if(attempt < maxAttempts){ await sleep(500 * attempt); continue; } // getData فقط‌خواندنی است، retry همیشه امن است
+      throw new Error('پاسخ نامعتبری از سرور دریافت شد. لطفاً دوباره تلاش کنید.');
+    }
+    if(!json.ok) throw new Error(json.error || 'خطا در دریافت اطلاعات');
+    return json.data;
+  }
+}
+// برای عملیات‌های نوشتنی (ثبت تراکنش، افزودن/حذف لیست و کاربر): فقط یک تلاش
+// شبکه‌ای امن، بدون retry خودکار روی پاسخ نامعتبر — DATA دیگر از سرور دوباره
+// خوانده نمی‌شود؛ هر بخش از UI خودش بعد از موفقیت، state محلی را به‌روز می‌کند.
+async function apiPost(action, payload){
+  return apiCall(action, payload, { retryOnBadResponse: false });
+}
+
+async function fetchData(){
+  DATA = await apiGet();
+  document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
+  renderAll();
+}
+
+/* ============================================================
+   AUTH FLOW
+   ============================================================ */
+function showLoginScreen(){
+  document.getElementById('boot-loading')?.classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app-shell').classList.add('hidden');
+}
+function showApp(){
+  document.getElementById('boot-loading')?.classList.add('hidden');
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app-shell').classList.remove('hidden');
+  applyRoleUI();
+}
+
+async function doLogin(){
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if(!username || !password){ errEl.textContent = 'نام کاربری و رمز عبور را وارد کنید'; errEl.style.display='block'; return; }
+
+  const btn = document.getElementById('login-submit-btn');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spin"></span> در حال ورود…';
+
+  try{
+    const passwordHash = await sha256Hex(password);
+    // ورود و بارگذاری کامل داده‌ها در یک درخواست واحد (به‌جای دو درخواست جدا) — سریع‌تر
+    const json = await withTimeout(
+      apiCall('login', { username, passwordHash }, { retryOnBadResponse: true }),
+      15000, 'اتصال بیش از حد طول کشید. دوباره تلاش کنید.'
     );
+    SESSION = json.result;
+    DATA = json.data;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(SESSION));
+    document.getElementById('login-password').value = '';
+    document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
+    renderAll();
+    showApp();
+    toast('خوش آمدید، ' + SESSION.fullName, false);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = original;
   }
+}
+function logout(){
+  SESSION = null;
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+function applyRoleUI(){
+  const isAdmin = SESSION && SESSION.role === 'مدیر';
+  document.getElementById('user-name').textContent = SESSION ? SESSION.fullName : '—';
+  document.getElementById('user-role').textContent = SESSION ? SESSION.role : '—';
+  document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
+  document.getElementById('nav-settings').style.display = isAdmin ? '' : 'none';
+  document.getElementById('sidebar-connect-btn').style.display = isAdmin ? '' : 'none';
+  document.getElementById('settings-admin-area').classList.toggle('hidden', !isAdmin);
+  document.getElementById('settings-admin-locked').classList.toggle('hidden', isAdmin);
+}
+
+async function changeMyPassword(){
+  const oldPw = document.getElementById('pw-old').value;
+  const newPw = document.getElementById('pw-new').value;
+  if(!oldPw || !newPw){ toast('هر دو فیلد رمز عبور را پر کنید', true); return; }
+  if(newPw.length < 4){ toast('رمز عبور جدید باید حداقل ۴ کاراکتر باشد', true); return; }
+  try{
+    const oldPasswordHash = await sha256Hex(oldPw);
+    const newPasswordHash = await sha256Hex(newPw);
+    await apiPost('changePassword', { username: SESSION.username, oldPasswordHash, newPasswordHash });
+    document.getElementById('pw-old').value = '';
+    document.getElementById('pw-new').value = '';
+    toast('رمز عبور با موفقیت تغییر کرد', false);
+  }catch(err){ toast(err.message, true); }
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function withTimeout(promise, ms, message){
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
+}
+
+async function boot(){
+  if(!API_URL){ document.getElementById('boot-loading').classList.add('hidden'); openSetupModal(false); return; }
+  if(!SESSION){ showLoginScreen(); return; }
+  try{
+    await withTimeout(fetchData(), 15000, 'اتصال بیش از حد طول کشید.');
+    showApp();
+  }catch(err){
+    // به‌جای گیر کردن روی اسپینر تا ابد، خطا را نشان بده و اجازه‌ی تلاش دوباره بده
+    document.getElementById('boot-loading-text').textContent = 'اتصال به انبار ناموفق بود: ' + err.message;
+    document.getElementById('boot-retry-btn').classList.remove('hidden');
+  }
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+document.querySelectorAll('.nav-item').forEach(btn=>{
+  btn.addEventListener('click', ()=> switchView(btn.dataset.view));
 });
+function switchView(name){
+  document.querySelectorAll('.nav-item').forEach(b=> b.classList.toggle('active', b.dataset.view===name));
+  document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  if(name==='history') renderHistory();
+  if(name==='by-city') renderByCity();
+  if(name==='by-type') renderByType();
+  if(name==='settings') renderSettings();
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function toEnNum(n){ return Number(n||0).toLocaleString('en-US'); }
+function cityTotals(){
+  const map = {};
+  DATA.inventory.forEach(r=>{ map[r.city] = (map[r.city]||0) + Number(r.stock||0); });
+  return map;
+}
+
+/* ============================================================
+   رنگ واقعی هر تجهیز: تا نمودارها و جدول‌ها با همان رنگی که موقع
+   ثبت انتخاب شده نمایش داده شوند، نه یک پالت دلخواه و بی‌ربط.
+   ============================================================ */
+const COLOR_NAME_MAP = {
+  'زرد': '#F4C430', 'مشکی': '#232323', 'سفید': '#FFFFFF', 'قرمز': '#D9342B',
+  'آبی': '#2F6FED', 'سبز': '#2FA84F', 'نارنجی': '#E58F2A', 'خاکستری': '#9AA39C',
+  'قهوه‌ای': '#7B4B2A', 'صورتی': '#E76FA0', 'بنفش': '#8B5CF6', 'طلایی': '#D4AF37', 'نقره‌ای': '#B9C0BA'
+};
+function colorNameToHex(name){
+  if(!name) return '#C8CFC9';
+  if(COLOR_NAME_MAP[name]) return COLOR_NAME_MAP[name];
+  // برای رنگ‌های سفارشی که خودتان اضافه می‌کنید: یک رنگ پایدار و متمایز بر اساس نام می‌سازیم
+  let hash = 0;
+  for(let i=0;i<name.length;i++){ hash = name.charCodeAt(i) + ((hash<<5)-hash); }
+  return `hsl(${Math.abs(hash) % 360}, 58%, 48%)`;
+}
+function colorDotHtml(name){
+  if(!name) return '';
+  const c = colorNameToHex(name);
+  const border = (name==='سفید') ? '1.5px solid #D8DED6' : '1.5px solid rgba(0,0,0,.12)';
+  return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};border:${border};margin-inline-end:6px;vertical-align:middle;"></span>`;
+}
+
+function toast(msg, isError){
+  const el = document.createElement('div');
+  el.className = 'toast ' + (isError? 'error':'success');
+  el.innerHTML = (isError
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>')
+    + '<span>'+msg+'</span>';
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(()=>{ el.remove(); }, 3600);
+}
+
+/* ============================================================
+   RENDER: ALL
+   ============================================================ */
+function renderAll(){
+  populateFormSelects();
+  renderStats();
+  renderDashCityGrid();
+  renderDashRecent();
+  renderDashChart();
+  renderHistory();
+  renderByCity();
+  renderByType();
+  renderSettings();
+  updateStockPreview();
+}
+
+function renderStats(){
+  const totals = cityTotals();
+  const totalStock = Object.values(totals).reduce((a,b)=>a+b,0);
+  const totalIn = DATA.transactions.filter(t=>t.operation==='IN').reduce((a,t)=>a+Number(t.quantity),0);
+  const totalOut = DATA.transactions.filter(t=>t.operation==='OUT').reduce((a,t)=>a+Number(t.quantity),0);
+  const activeCities = Object.keys(totals).filter(c=>totals[c]>0).length;
+  document.getElementById('stat-total').textContent = toEnNum(totalStock);
+  document.getElementById('stat-in').textContent = toEnNum(totalIn);
+  document.getElementById('stat-out').textContent = toEnNum(totalOut);
+  document.getElementById('stat-cities').textContent = toEnNum(activeCities);
+}
+
+function cityCardsHtml(limit){
+  const totals = cityTotals();
+  let entries = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+  if(limit) entries = entries.slice(0, limit);
+  const max = Math.max(1, ...entries.map(e=>e[1]));
+  if(entries.length===0){
+    return '<div class="empty-state">هنوز موجودی‌ای ثبت نشده است.</div>';
+  }
+  return entries.map(([city, total])=>{
+    const pct = Math.round((total/max)*100);
+    const crateCount = Math.min(24, Math.max(1, Math.round(total/Math.max(1,max/24))));
+    let crates = '';
+    for(let i=0;i<24;i++){ crates += `<div class="crate ${i<crateCount?'':'dim'}"></div>`; }
+    return `<div class="city-card">
+      <div class="name">${city}</div>
+      <div class="amount">${toEnNum(total)} <span>واحد</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <div class="crate-row">${crates}</div>
+    </div>`;
+  }).join('');
+}
+function renderDashCityGrid(){ document.getElementById('dash-city-grid').innerHTML = cityCardsHtml(6); }
+function renderByCity(){
+  document.getElementById('city-full-grid').innerHTML = cityCardsHtml(null);
+  const totals = cityTotals();
+  const labels = Object.keys(totals);
+  const values = Object.values(totals);
+  drawChart('city-chart', 'bar', labels, [{label:'موجودی', data:values, backgroundColor:'#00C56C'}]);
+}
+
+function renderDashRecent(){
+  const list = DATA.transactions.slice(0,8);
+  const wrap = document.getElementById('dash-recent-list');
+  if(list.length===0){ wrap.innerHTML = '<div class="empty-state">هنوز تراکنشی ثبت نشده است.</div>'; return; }
+  wrap.innerHTML = list.map(t=>`
+    <div class="recent-row">
+      <span class="op-pill ${t.operation}">${t.operation==='IN'?'ورود':'خروج'}</span>
+      <div class="meta">
+        <div class="main">${colorDotHtml(t.color)}${t.itemType}${t.color? ' · '+t.color:''}</div>
+        <div class="sub">${t.city} · ${t.person}</div>
+      </div>
+      <div class="qty">${t.operation==='IN'?'+':'-'}${toEnNum(t.quantity)}</div>
+      <div class="time">${t.datetime}</div>
+    </div>`).join('');
+}
+
+function renderDashChart(){
+  // موجودی را بر اساس همان رنگ واقعی که موقع ثبت انتخاب شده گروه‌بندی می‌کنیم
+  // و هر بخش نمودار را دقیقاً با همان رنگ رنگ‌آمیزی می‌کنیم.
+  const map = {}; // label -> { total, hex }
+  DATA.inventory.forEach(r=>{
+    const label = r.color ? r.color : 'بدون رنگ (سایر تجهیزات)';
+    if(!map[label]) map[label] = { total: 0, hex: r.color ? colorNameToHex(r.color) : '#C8CFC9' };
+    map[label].total += Number(r.stock||0);
+  });
+  const labels = Object.keys(map);
+  const values = labels.map(l=>map[l].total);
+  const colors = labels.map(l=>map[l].hex);
+  drawChart('dash-type-chart', 'doughnut', labels, [{data:values, backgroundColor:colors, borderColor:'#fff', borderWidth:2}]);
+}
+
+function drawChart(canvasId, type, labels, datasets){
+  const ctx = document.getElementById(canvasId);
+  if(!ctx) return;
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId] = new Chart(ctx, {
+    type,
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display: type==='doughnut', position:'bottom', labels:{ font:{family:'Vazirmatn'}, boxWidth:10 } } },
+      scales: type==='bar' ? { y:{ beginAtZero:true, ticks:{font:{family:'Vazirmatn'}} }, x:{ ticks:{font:{family:'Vazirmatn'}} } } : {}
+    }
+  });
+}
+
+/* ============================================================
+   HISTORY TABLE
+   ============================================================ */
+function renderHistory(){
+  const citySel = document.getElementById('hf-city');
+  fillSelectOnce(citySel, DATA.lists.cities, 'همه‌ی شهرها');
+  const search = (document.getElementById('hf-search').value||'').toLowerCase();
+  const city = document.getElementById('hf-city').value;
+  const op = document.getElementById('hf-op').value;
+  const cat = document.getElementById('hf-cat').value;
+
+  let rows = DATA.transactions.filter(t=>{
+    if(city && t.city!==city) return false;
+    if(op && t.operation!==op) return false;
+    if(cat && t.category!==cat) return false;
+    if(search && !(String(t.person).toLowerCase().includes(search) || String(t.itemType).toLowerCase().includes(search))) return false;
+    return true;
+  });
+
+  const tbody = document.getElementById('history-tbody');
+  document.getElementById('history-empty').style.display = rows.length? 'none':'block';
+  tbody.innerHTML = rows.map(t=>`
+    <tr>
+      <td>${t.datetime}</td><td>${t.city}</td><td>${t.category}</td><td>${t.itemType}</td><td>${colorDotHtml(t.color)}${t.color||'—'}</td>
+      <td>${t.person}</td><td>${t.registeredBy||'—'}</td>
+      <td><span class="op-pill ${t.operation}">${t.operation==='IN'?'ورود':'خروج'}</span></td>
+      <td>${toEnNum(t.quantity)}</td><td>${toEnNum(t.balanceAfter)}</td>
+    </tr>`).join('');
+}
+
+/* ============================================================
+   BY TYPE / COLOR TABLE
+   ============================================================ */
+function renderByType(){
+  const citySel = document.getElementById('tf-city');
+  fillSelectOnce(citySel, DATA.lists.cities, 'همه‌ی شهرها');
+  const search = (document.getElementById('tf-search').value||'').toLowerCase();
+  const city = document.getElementById('tf-city').value;
+
+  let rows = DATA.inventory.filter(r=>{
+    if(city && r.city!==city) return false;
+    if(search && !String(r.itemType).toLowerCase().includes(search)) return false;
+    return true;
+  }).sort((a,b)=> b.stock - a.stock);
+
+  const tbody = document.getElementById('bytype-tbody');
+  document.getElementById('bytype-empty').style.display = rows.length? 'none':'block';
+  tbody.innerHTML = rows.map(r=>`
+    <tr><td>${r.city}</td><td>${r.category}</td><td>${r.itemType}</td><td>${colorDotHtml(r.color)}${r.color||'—'}</td><td>${toEnNum(r.stock)}</td></tr>
+  `).join('');
+}
+
+function fillSelectOnce(selectEl, items, placeholder){
+  const current = selectEl.value;
+  selectEl.innerHTML = `<option value="">${placeholder}</option>` + items.map(i=>`<option value="${i}">${i}</option>`).join('');
+  selectEl.value = current;
+}
+
+/* ============================================================
+   ENTRY FORM
+   ============================================================ */
+document.getElementById('cat-toggle').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  currentCategory = b.dataset.cat;
+  document.querySelectorAll('#cat-toggle button').forEach(x=>x.classList.toggle('active', x===b));
+  populateFormSelects();
+  updateStockPreview();
+});
+document.getElementById('op-toggle').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  currentOp = b.dataset.op;
+  document.querySelectorAll('#op-toggle button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+});
+['f-city','f-itemtype','f-color'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', updateStockPreview);
+});
+
+function populateFormSelects(){
+  const citySel = document.getElementById('f-city');
+  const prevCity = citySel.value;
+  citySel.innerHTML = DATA.lists.cities.map(c=>`<option value="${c}">${c}</option>`).join('');
+  if(prevCity) citySel.value = prevCity;
+
+  const isBox = currentCategory === 'باکس';
+  document.getElementById('f-itemtype-label').textContent = isBox ? 'نوع باکس' : 'نام تجهیز';
+  const itemSel = document.getElementById('f-itemtype');
+  const prevItem = itemSel.value;
+  const items = isBox ? DATA.lists.boxTypes : DATA.lists.others;
+  itemSel.innerHTML = items.map(c=>`<option value="${c}">${c}</option>`).join('');
+  if(prevItem) itemSel.value = prevItem;
+
+  document.getElementById('f-color-wrap').style.display = isBox ? '' : 'none';
+  const colorSel = document.getElementById('f-color');
+  const prevColor = colorSel.value;
+  colorSel.innerHTML = DATA.lists.colors.map(c=>`<option value="${c}">${c}</option>`).join('');
+  if(prevColor) colorSel.value = prevColor;
+  updateColorSwatch();
+}
+
+function updateColorSwatch(){
+  const swatch = document.getElementById('f-color-swatch');
+  const color = document.getElementById('f-color').value;
+  swatch.style.background = colorNameToHex(color);
+}
+
+function updateStockPreview(){
+  const city = document.getElementById('f-city').value;
+  const itemType = document.getElementById('f-itemtype').value;
+  const color = currentCategory==='باکس' ? document.getElementById('f-color').value : '';
+  const row = DATA.inventory.find(r=> r.city===city && r.category===currentCategory && r.itemType===itemType && (r.color||'')===(color||''));
+  document.getElementById('stock-preview-val').textContent = row ? toEnNum(row.stock) + ' واحد' : '۰ واحد';
+  updateColorSwatch();
+}
+
+function resetForm(){
+  document.getElementById('f-person').value = '';
+  document.getElementById('f-qty').value = '';
+  updateStockPreview();
+}
+
+async function submitTransaction(){
+  const city = document.getElementById('f-city').value;
+  const itemType = document.getElementById('f-itemtype').value;
+  const color = currentCategory==='باکس' ? document.getElementById('f-color').value : '';
+  const person = document.getElementById('f-person').value.trim();
+  const qty = Number(document.getElementById('f-qty').value);
+
+  if(!city || !itemType){ toast('ابتدا شهر و نوع تجهیز را انتخاب کنید', true); return; }
+  if(!person){ toast('نام شخص / راننده را وارد کنید', true); return; }
+  if(!qty || qty<=0){ toast('تعداد باید عددی مثبت باشد', true); return; }
+
+  const btn = document.getElementById('submit-btn');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; // جلوگیری از دابل‌کلیک و ثبت تکراری
+  btn.innerHTML = '<span class="loading-spin"></span> در حال ثبت…';
+
+  const payload = {
+    city, category: currentCategory, itemType, color, person,
+    registeredBy: SESSION ? SESSION.username : '', operation: currentOp, quantity: qty
+  };
+
+  try{
+    const res = await apiPost('addTransaction', payload);
+    const r = res.result; // {id, newStock, dateStr}
+
+    // به‌جای درخواست دوباره‌ی کل داده‌ها از گوگل‌شیت (که کند است)، همینجا
+    // state محلی را با همان نتیجه‌ای که سرور برگردانده به‌روز می‌کنیم.
+    DATA.transactions.unshift({
+      id: r.id, datetime: r.dateStr, city, category: currentCategory, itemType, color,
+      person, registeredBy: payload.registeredBy, operation: currentOp,
+      quantity: qty, balanceAfter: r.newStock
+    });
+    const invRow = DATA.inventory.find(x => x.city===city && x.category===currentCategory && x.itemType===itemType && (x.color||'')===(color||''));
+    if(invRow){ invRow.stock = r.newStock; }
+    else { DATA.inventory.push({ city, category: currentCategory, itemType, color, stock: r.newStock }); }
+
+    renderAll();
+    toast(`تراکنش ثبت شد — موجودی جدید: ${toEnNum(r.newStock)}`, false);
+    document.getElementById('f-person').value = '';
+    document.getElementById('f-qty').value = '';
+  }catch(err){
+    toast(err.message, true);
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+/* ============================================================
+   SETTINGS / LISTS MANAGEMENT
+   ============================================================ */
+function renderSettings(){
+  renderChipList('city', DATA.lists.cities);
+  renderChipList('boxType', DATA.lists.boxTypes);
+  renderChipList('color', DATA.lists.colors);
+  renderChipList('other', DATA.lists.others);
+  renderUserList();
+  applyRoleUI();
+}
+function renderChipList(type, items){
+  const el = document.getElementById('list-'+type);
+  if(!el) return;
+  if(items.length===0){ el.innerHTML = '<div class="empty-state" style="padding:14px;">موردی ثبت نشده</div>'; return; }
+  el.innerHTML = items.map(v=>`
+    <div class="chip"><span>${v}</span>
+      <button onclick="removeList('${type}','${v.replace(/'/g,"\\'")}')" title="حذف">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`).join('');
+}
+const LIST_KEY_MAP = { city: 'cities', boxType: 'boxTypes', color: 'colors', other: 'others' };
+async function addList(type){
+  const input = document.getElementById('add-'+type);
+  const value = input.value.trim();
+  if(!value) return;
+  try{
+    await apiPost('addListItem', { type, value });
+    const key = LIST_KEY_MAP[type];
+    if(!DATA.lists[key].includes(value)) DATA.lists[key].push(value);
+    input.value = '';
+    renderAll();
+    toast('به لیست افزوده شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+async function removeList(type, value){
+  try{
+    await apiPost('deleteListItem', { type, value });
+    const key = LIST_KEY_MAP[type];
+    DATA.lists[key] = DATA.lists[key].filter(v => v !== value);
+    renderAll();
+    toast('از لیست حذف شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+
+/* ============================================================
+   USER MANAGEMENT (admin only)
+   ============================================================ */
+function renderUserList(){
+  const el = document.getElementById('user-list');
+  if(!el) return;
+  if(!DATA.users || DATA.users.length===0){ el.innerHTML=''; return; }
+  el.innerHTML = DATA.users.map(u=>`
+    <div class="user-row">
+      <span class="badge ${u.role==='مدیر'?'':'staff'}">${u.role}</span>
+      <div class="uname"><b>${u.fullName}</b><span>@${u.username}</span></div>
+      <button class="del-btn" onclick="removeUser('${u.username.replace(/'/g,"\\'")}')" title="حذف کاربر">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`).join('');
+}
+async function createUser(){
+  const username = document.getElementById('nu-username').value.trim();
+  const password = document.getElementById('nu-password').value;
+  const fullName = document.getElementById('nu-fullname').value.trim();
+  const role = document.getElementById('nu-role').value;
+  if(!username || !password || !fullName){ toast('همه‌ی فیلدهای کاربر جدید را پر کنید', true); return; }
+  if(password.length < 4){ toast('رمز عبور باید حداقل ۴ کاراکتر باشد', true); return; }
+  try{
+    const passwordHash = await sha256Hex(password);
+    await apiPost('addUser', { username, passwordHash, fullName, role });
+    DATA.users.push({ username, fullName, role, active: true });
+    document.getElementById('nu-username').value = '';
+    document.getElementById('nu-password').value = '';
+    document.getElementById('nu-fullname').value = '';
+    renderAll();
+    toast('کاربر جدید ساخته شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+async function removeUser(username){
+  if(SESSION && username === SESSION.username){ toast('نمی‌توانید حساب خودتان را حذف کنید', true); return; }
+  try{
+    await apiPost('deleteUser', { username });
+    DATA.users = DATA.users.filter(u => u.username !== username);
+    renderAll();
+    toast('کاربر حذف شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+
+/* ============================================================
+   PWA (installable app shell)
+   ============================================================ */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+boot();
+</script>
+</body>
+</html>
