@@ -1586,8 +1586,16 @@ async function submitEditStock(){
 /* ============================================================
    PWA (installable app shell)
    ============================================================ */
+// سرویس‌ورکر قبلی حذف شد چون باعث می‌شد گاهی نسخه‌ی قدیمی و کش‌شده‌ی اپ
+// نمایش داده شود. این بخش هر سرویس‌ورکر قدیمی که قبلاً روی مرورگر کاربر
+// نصب شده را غیرفعال و کش‌های آن را پاک می‌کند تا این مشکل کاملاً از بین برود.
 if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(reg=> reg.unregister());
+  }).catch(()=>{});
+  if('caches' in window){
+    caches.keys().then(keys=> keys.forEach(k=> caches.delete(k))).catch(()=>{});
+  }
 }
 
 /* ============================================================
