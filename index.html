@@ -302,6 +302,7 @@
   .user-row:last-child{ border-bottom:none; }
   .user-row .badge{ font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:100px; background:var(--brand-tint); color:var(--brand-darker); flex:none;}
   .user-row .badge.staff{ background:var(--surface-2); color:var(--ink-muted); }
+  .user-row .badge.super{ background:#2A2E45; color:#FFFFFF; }
   .user-row .uname{ flex:1; min-width:0; }
   .user-row .uname b{ display:block; font-size:12.8px; }
   .user-row .uname span{ color:var(--ink-muted); font-size:11.3px; }
@@ -814,6 +815,17 @@
 
           <div style="margin-top:18px;" id="user-list"></div>
         </div>
+
+        <div class="panel hidden" id="danger-zone-panel" style="max-width:520px; border:1.5px solid #F1D6D0;">
+          <div class="panel-head"><h2 style="color:var(--danger);">منطقه‌ی خطر</h2></div>
+          <p style="font-size:12.5px; color:var(--ink-muted); line-height:1.9; margin:0 0 14px;">
+            این کار تمام تاریخچه‌ی تراکنش‌ها و کل موجودی انبار را برای همیشه پاک می‌کند
+            (شهرها، انواع باکس، رنگ‌ها و کاربران دست‌نخورده می‌مانند). فقط برای پاک‌سازی
+            داده‌های آزمایشی قبل از شروع کار واقعی استفاده کنید — این عمل غیرقابل بازگشت است.
+            <br>این بخش فقط برای «مدیر ارشد» نمایش داده می‌شود.
+          </p>
+          <button class="btn btn-danger-ghost" onclick="resetAllData()">پاک کردن کامل تاریخچه و موجودی</button>
+        </div>
       </div>
     </section>
 
@@ -996,10 +1008,12 @@ function logout(){
   localStorage.removeItem(SESSION_KEY);
   location.reload();
 }
-function isAdmin(){ return !!(SESSION && SESSION.role === 'مدیر'); }
+function isAdmin(){ return !!(SESSION && (SESSION.role === 'مدیر' || SESSION.role === 'مدیر ارشد')); }
+function isSuperAdmin(){ return !!(SESSION && SESSION.role === 'مدیر ارشد'); }
 
 function applyRoleUI(){
   const admin = isAdmin();
+  const superAdmin = isSuperAdmin();
   document.getElementById('user-name').textContent = SESSION ? SESSION.fullName : '—';
   document.getElementById('user-role').textContent = SESSION ? SESSION.role : '—';
   document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
@@ -1007,6 +1021,23 @@ function applyRoleUI(){
   document.getElementById('sidebar-connect-btn').style.display = admin ? '' : 'none';
   document.getElementById('settings-admin-area').classList.toggle('hidden', !admin);
   document.getElementById('settings-admin-locked').classList.toggle('hidden', admin);
+
+  // «منطقه‌ی خطر» (پاک کردن کامل) فقط برای مدیر ارشد قابل مشاهده است
+  const dangerZone = document.getElementById('danger-zone-panel');
+  if(dangerZone) dangerZone.classList.toggle('hidden', !superAdmin);
+
+  // فقط مدیر ارشد می‌تواند هنگام ساخت کاربر جدید، نقش «مدیر ارشد» را هم انتخاب کند
+  const roleSelect = document.getElementById('nu-role');
+  if(roleSelect){
+    const hadSuperOption = !!roleSelect.querySelector('option[value="مدیر ارشد"]');
+    if(superAdmin && !hadSuperOption){
+      const opt = document.createElement('option');
+      opt.value = 'مدیر ارشد'; opt.textContent = 'مدیر ارشد';
+      roleSelect.appendChild(opt);
+    } else if(!superAdmin && hadSuperOption){
+      roleSelect.querySelector('option[value="مدیر ارشد"]').remove();
+    }
+  }
 }
 
 async function changeMyPassword(){
@@ -1474,14 +1505,18 @@ function renderUserList(){
   const el = document.getElementById('user-list');
   if(!el) return;
   if(!DATA.users || DATA.users.length===0){ el.innerHTML=''; return; }
-  el.innerHTML = DATA.users.map(u=>`
+  el.innerHTML = DATA.users.map(u=>{
+    const badgeClass = u.role==='مدیر ارشد' ? 'super' : (u.role==='مدیر' ? '' : 'staff');
+    const canDelete = isSuperAdmin() || u.role !== 'مدیر ارشد'; // مدیر عادی نمی‌تواند مدیر ارشد را حذف کند
+    return `
     <div class="user-row">
-      <span class="badge ${u.role==='مدیر'?'':'staff'}">${u.role}</span>
+      <span class="badge ${badgeClass}">${u.role}</span>
       <div class="uname"><b>${u.fullName}</b><span>@${u.username}</span></div>
-      <button class="del-btn" onclick="removeUser('${u.username.replace(/'/g,"\\'")}')" title="حذف کاربر">
+      ${canDelete ? `<button class="del-btn" onclick="removeUser('${u.username.replace(/'/g,"\\'")}')" title="حذف کاربر">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>`).join('');
+      </button>` : ''}
+    </div>`;
+  }).join('');
 }
 async function createUser(){
   const username = document.getElementById('nu-username').value.trim();
@@ -1492,7 +1527,7 @@ async function createUser(){
   if(password.length < 4){ toast('رمز عبور باید حداقل ۴ کاراکتر باشد', true); return; }
   try{
     const passwordHash = await sha256Hex(password);
-    await apiPost('addUser', { username, passwordHash, fullName, role });
+    await apiPost('addUser', { username, passwordHash, fullName, role, requestingUsername: SESSION ? SESSION.username : '' });
     DATA.users.push({ username, fullName, role, active: true });
     document.getElementById('nu-username').value = '';
     document.getElementById('nu-password').value = '';
@@ -1504,10 +1539,26 @@ async function createUser(){
 async function removeUser(username){
   if(SESSION && username === SESSION.username){ toast('نمی‌توانید حساب خودتان را حذف کنید', true); return; }
   try{
-    await apiPost('deleteUser', { username });
+    await apiPost('deleteUser', { username, requestingUsername: SESSION ? SESSION.username : '' });
     DATA.users = DATA.users.filter(u => u.username !== username);
     renderAll();
     toast('کاربر حذف شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+
+async function resetAllData(){
+  if(!isAdmin()) return;
+  const typed = prompt('این کار تمام تاریخچه و موجودی را برای همیشه پاک می‌کند و غیرقابل بازگشت است.\n\nبرای تأیید، عبارت «پاک کن» را دقیقاً همینجا تایپ کنید:');
+  if(typed !== 'پاک کن'){
+    if(typed !== null) toast('عبارت تأیید درست وارد نشد؛ چیزی پاک نشد.', true);
+    return;
+  }
+  try{
+    await apiPost('resetAllData', { adminUsername: SESSION ? SESSION.username : '' });
+    DATA.transactions = [];
+    DATA.inventory = [];
+    renderAll();
+    toast('تاریخچه و موجودی کامل پاک شد', false);
   }catch(err){ toast(err.message, true); }
 }
 

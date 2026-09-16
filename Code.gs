@@ -74,6 +74,8 @@ function doPost(e) {
       result = deleteTransaction(body.payload);
     } else if (action === 'editInventory') {
       result = editInventory(body.payload);
+    } else if (action === 'resetAllData') {
+      result = resetAllData(body.payload);
     } else {
       throw new Error('اکشن نامعتبر است');
     }
@@ -132,7 +134,7 @@ function setupSheets() {
   if (users.getLastRow() === 0) {
     users.appendRow(['نام کاربری', 'رمز عبور (هش‌شده)', 'نام و نام خانوادگی', 'نقش', 'فعال', 'تاریخ ایجاد']);
     users.setFrozenRows(1);
-    users.appendRow(['admin', DEFAULT_ADMIN_HASH, 'مدیر سیستم', 'مدیر', true,
+    users.appendRow(['admin', DEFAULT_ADMIN_HASH, 'مدیر سیستم', 'مدیر ارشد', true,
                       Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm')]);
   }
 }
@@ -341,12 +343,21 @@ function addUser(payload) {
   const passwordHash = String(payload.passwordHash || '').trim();
   const fullName = String(payload.fullName || '').trim();
   const role = String(payload.role || 'کارشناس').trim();
+  const requestingUsername = String(payload.requestingUsername || '').trim();
 
   if (!username || !passwordHash || !fullName) throw new Error('همه‌ی فیلدهای کاربر الزامی است');
 
   const data = users.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === username) throw new Error('این نام کاربری قبلاً ثبت شده است');
+  }
+
+  if (role === 'مدیر ارشد') {
+    let requesterIsSuperAdmin = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
+    }
+    if (!requesterIsSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند کاربر مدیر ارشد دیگری بسازد');
   }
 
   users.appendRow([username, passwordHash, fullName, role, true,
@@ -360,10 +371,20 @@ function deleteUser(payload) {
   const users = ss.getSheetByName(SHEET_USERS);
 
   const username = String(payload.username || '').trim();
+  const requestingUsername = String(payload.requestingUsername || '').trim();
   const data = users.getDataRange().getValues();
+
+  let requesterIsSuperAdmin = false;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
+  }
+
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === username) {
       if (data.length === 2) throw new Error('حداقل یک کاربر باید در سامانه باقی بماند');
+      if (data[i][3] === 'مدیر ارشد' && !requesterIsSuperAdmin) {
+        throw new Error('فقط مدیر ارشد می‌تواند حساب مدیر ارشد دیگری را حذف کند');
+      }
       users.deleteRow(i + 1);
       return { message: 'کاربر حذف شد' };
     }
@@ -473,4 +494,33 @@ function editInventory(payload) {
   }
 
   return { newStock: newStock };
+}
+
+// ---------- بازنشانی کامل (فقط مدیر): تاریخچه و موجودی را هم‌زمان پاک می‌کند ----------
+// این تابع دقیقاً برای جلوگیری از حالتی است که کسی مستقیم داخل خودِ Google
+// Sheet ردیف‌های Transactions را پاک کند ولی Inventory هماهنگ نشود.
+// ---------- بازنشانی کامل (فقط «مدیر ارشد»، نه هر مدیری): تاریخچه و موجودی را هم‌زمان پاک می‌کند ----------
+// این تابع دقیقاً برای جلوگیری از حالتی است که کسی مستقیم داخل خودِ Google
+// Sheet ردیف‌های Transactions را پاک کند ولی Inventory هماهنگ نشود. عمداً به نقش
+// «مدیر ارشد» محدود شده تا مدیرهای عادی نتوانند کل داده را یکجا پاک کنند.
+function resetAllData(payload) {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  const adminUsername = String(payload.adminUsername || '').trim();
+  const users = ss.getSheetByName(SHEET_USERS);
+  const userData = users.getDataRange().getValues();
+  let isSuperAdmin = false;
+  for (let i = 1; i < userData.length; i++) {
+    if (userData[i][0] === adminUsername && userData[i][3] === 'مدیر ارشد') { isSuperAdmin = true; break; }
+  }
+  if (!isSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند بازنشانی کامل انجام دهد');
+
+  const tx = ss.getSheetByName(SHEET_TRANSACTIONS);
+  if (tx.getLastRow() > 1) tx.deleteRows(2, tx.getLastRow() - 1);
+
+  const inv = ss.getSheetByName(SHEET_INVENTORY);
+  if (inv.getLastRow() > 1) inv.deleteRows(2, inv.getLastRow() - 1);
+
+  return { message: 'تاریخچه و موجودی کامل پاک شد' };
 }
