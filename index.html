@@ -30,7 +30,7 @@
     --out:#C4681F;
     --out-tint:#FBEBDD;
     --danger:#C0392B;
-    --shadow: 0 1px 2px rgba(20,32,26,.04), 0 8px 24px -12px rgba(20,32,26,.12);
+    --shadow: 0 1px 2px rgba(20,32,26,.05);
     --radius-lg:18px;
     --radius-md:12px;
     --radius-sm:8px;
@@ -147,58 +147,52 @@
 
   /* ---------- Stat cards ---------- */
   .stat-grid{
-    display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;
+    display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px;
   }
   .stat-card{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
-    padding:18px 18px 16px; box-shadow:var(--shadow);
+    background:var(--surface); border-radius:var(--radius-lg);
+    padding:22px 22px 20px; box-shadow:var(--shadow);
   }
-  .stat-card .row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .stat-card .row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
   .stat-icon{
-    width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;display:flex;align-items:center;justify-content:center; opacity:.85;
   }
-  .stat-icon svg{width:17px;height:17px;}
+  .stat-icon svg{width:18px;height:18px;}
   .stat-card .label{ font-size:12.5px; color:var(--ink-muted); font-weight:600; }
-  .stat-card .value{ font-size:26px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-  .stat-card .sub{ font-size:11.5px; color:var(--ink-faint); margin-top:4px; }
-  .stat-total .stat-icon{ background:var(--brand-tint); color:var(--brand-darker); }
-  .stat-in .stat-icon{ background:var(--in-tint); color:var(--in); }
-  .stat-out .stat-icon{ background:var(--out-tint); color:var(--out); }
-  .stat-cities .stat-icon{ background:var(--surface-2); color:var(--ink); }
+  .stat-card .value{ font-size:30px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .stat-total .stat-icon{ color:var(--brand-darker); }
+  .stat-in .stat-icon{ color:var(--in); }
+  .stat-out .stat-icon{ color:var(--out); }
+  .stat-cities .stat-icon{ color:var(--ink-faint); }
 
   /* ---------- Section shell ---------- */
   .panel{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
-    padding:20px; box-shadow:var(--shadow); margin-bottom:18px;
+    background:var(--surface); border-radius:var(--radius-lg);
+    padding:24px; box-shadow:var(--shadow); margin-bottom:22px;
   }
-  .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:10px; flex-wrap:wrap;}
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; gap:10px; flex-wrap:wrap;}
   .panel-head h2{ margin:0; font-size:15.5px; font-weight:800; }
   .panel-head .hint{ font-size:12px; color:var(--ink-muted); }
 
-  .two-col{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; align-items:start; }
+  .two-col{ display:grid; grid-template-columns:1.3fr 1fr; gap:22px; align-items:start; }
 
   /* ---------- City cards (crate visual) ---------- */
-  .city-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+  .city-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; }
   .city-card{
-    border:1px solid var(--line); border-radius:var(--radius-md); padding:14px;
-    background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 130%);
+    background:var(--bg); border-radius:var(--radius-md); padding:16px;
   }
-  .city-card .name{ font-weight:700; font-size:13.5px; margin-bottom:2px; }
-  .city-card .amount{ font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; margin-bottom:8px;}
+  .city-card .name{ font-weight:700; font-size:13.5px; margin-bottom:3px; }
+  .city-card .amount{ font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; margin-bottom:10px;}
   .city-card .amount span{ font-size:11px; font-weight:600; color:var(--ink-muted); }
-  .bar-track{ height:7px; border-radius:6px; background:var(--surface-2); overflow:hidden; margin-bottom:9px;}
-  .bar-fill{ height:100%; border-radius:6px; background:linear-gradient(90deg, var(--brand), var(--brand-darker)); }
-  .crate-row{ display:flex; gap:3px; flex-wrap:wrap; }
-  .crate{ width:9px;height:9px;border-radius:2px; background:var(--brand); opacity:.85; }
-  .crate.dim{ background:var(--line); }
+  .bar-track{ height:6px; border-radius:6px; background:var(--surface-2); overflow:hidden; }
+  .bar-fill{ height:100%; border-radius:6px; background:var(--brand); }
 
   /* ---------- Recent list ---------- */
-  .recent-list{ display:flex; flex-direction:column; }
+  .recent-list{ display:flex; flex-direction:column; gap:2px; }
   .recent-row{
-    display:flex; align-items:center; gap:12px; padding:10px 2px;
-    border-bottom:1px solid var(--line); font-size:12.8px;
+    display:flex; align-items:center; gap:12px; padding:11px 2px; font-size:12.8px;
   }
-  .recent-row:last-child{ border-bottom:none; }
+  .recent-row + .recent-row{ border-top:1px solid var(--bg); }
   .op-pill{
     flex:none; font-size:11px; font-weight:700; padding:4px 9px; border-radius:100px;
   }
@@ -529,7 +523,6 @@
             <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg></span>
           </div>
           <div class="value" id="stat-total">۰</div>
-          <div class="sub">مجموع تمام تجهیزات، همه‌ی شهرها</div>
         </div>
         <div class="stat-card stat-in">
           <div class="row">
@@ -537,7 +530,6 @@
             <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></span>
           </div>
           <div class="value" id="stat-in">۰</div>
-          <div class="sub">تعداد کل باکس/تجهیز وارد شده</div>
         </div>
         <div class="stat-card stat-out">
           <div class="row">
@@ -545,7 +537,6 @@
             <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
           </div>
           <div class="value" id="stat-out">۰</div>
-          <div class="sub">تعداد کل باکس/تجهیز خارج شده</div>
         </div>
         <div class="stat-card stat-cities">
           <div class="row">
@@ -553,7 +544,6 @@
             <span class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/></svg></span>
           </div>
           <div class="value" id="stat-cities">۰</div>
-          <div class="sub">شهرهای دارای موجودی فعال</div>
         </div>
       </div>
 
@@ -561,7 +551,7 @@
         <div class="panel">
           <div class="panel-head">
             <h2>موجودی به تفکیک شهر</h2>
-            <span class="hint">هر مربع کوچک ≈ یک واحد از میانگین موجودی</span>
+            <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('by-city')">مشاهده همه</span>
           </div>
           <div class="city-grid" id="dash-city-grid"></div>
         </div>
@@ -577,7 +567,6 @@
       <div class="panel">
         <div class="panel-head">
           <h2>توزیع موجودی بر اساس رنگ تجهیزات</h2>
-          <span class="hint">رنگ هر بخش نمودار همان رنگی است که موقع ثبت انتخاب شده</span>
         </div>
         <div class="chart-box"><canvas id="dash-type-chart"></canvas></div>
       </div>
@@ -1127,18 +1116,14 @@ function cityCardsHtml(limit){
   }
   return entries.map(([city, total])=>{
     const pct = Math.round((total/max)*100);
-    const crateCount = Math.min(24, Math.max(1, Math.round(total/Math.max(1,max/24))));
-    let crates = '';
-    for(let i=0;i<24;i++){ crates += `<div class="crate ${i<crateCount?'':'dim'}"></div>`; }
     return `<div class="city-card">
       <div class="name">${city}</div>
       <div class="amount">${toEnNum(total)} <span>واحد</span></div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-      <div class="crate-row">${crates}</div>
     </div>`;
   }).join('');
 }
-function renderDashCityGrid(){ document.getElementById('dash-city-grid').innerHTML = cityCardsHtml(6); }
+function renderDashCityGrid(){ document.getElementById('dash-city-grid').innerHTML = cityCardsHtml(4); }
 function renderByCity(){
   document.getElementById('city-full-grid').innerHTML = cityCardsHtml(null);
   const totals = cityTotals();
@@ -1148,7 +1133,7 @@ function renderByCity(){
 }
 
 function renderDashRecent(){
-  const list = DATA.transactions.slice(0,8);
+  const list = DATA.transactions.slice(0,5);
   const wrap = document.getElementById('dash-recent-list');
   if(list.length===0){ wrap.innerHTML = '<div class="empty-state">هنوز تراکنشی ثبت نشده است.</div>'; return; }
   wrap.innerHTML = list.map(t=>`
