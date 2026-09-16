@@ -70,6 +70,10 @@ function doPost(e) {
       result = deleteUser(body.payload);
     } else if (action === 'changePassword') {
       result = changePassword(body.payload);
+    } else if (action === 'deleteTransaction') {
+      result = deleteTransaction(body.payload);
+    } else if (action === 'editInventory') {
+      result = editInventory(body.payload);
     } else {
       throw new Error('اکشن نامعتبر است');
     }
@@ -386,4 +390,87 @@ function changePassword(payload) {
     }
   }
   throw new Error('کاربر یافت نشد');
+}
+
+// ---------- حذف یک تراکنش (فقط مدیر — کنترل نقش در فرانت‌اند انجام می‌شود) ----------
+// موجودی فعلی آن آیتم بر اساس اثر همان تراکنش برگردانده می‌شود؛ خودِ تراکنش از
+// تاریخچه پاک می‌شود. برای رکوردهای «اصلاح موجودی» (ADJUST) فقط ردیف حذف می‌شود
+// چون خودشان یک تغییر مستقیم مقدار بودند، نه یک ورود/خروج واقعی.
+function deleteTransaction(payload) {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tx = ss.getSheetByName(SHEET_TRANSACTIONS);
+  const inv = ss.getSheetByName(SHEET_INVENTORY);
+
+  const id = String(payload.id || '').trim();
+  if (!id) throw new Error('شناسه‌ی تراکنش نامعتبر است');
+
+  const data = tx.getDataRange().getValues();
+  let rowIndex = -1, row = null;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === id) { rowIndex = i + 1; row = data[i]; break; }
+  }
+  if (rowIndex === -1) throw new Error('تراکنش یافت نشد (شاید قبلاً حذف شده)');
+
+  const city = row[2], category = row[3], itemType = row[4], color = row[5];
+  const operation = row[8], quantity = Number(row[9]);
+
+  if (operation === 'IN' || operation === 'OUT') {
+    const invData = inv.getDataRange().getValues();
+    for (let i = 1; i < invData.length; i++) {
+      if (invData[i][0] === city && invData[i][1] === category && invData[i][2] === itemType && invData[i][3] === color) {
+        let stock = Number(invData[i][4]) || 0;
+        stock = (operation === 'IN') ? (stock - quantity) : (stock + quantity);
+        if (stock < 0) stock = 0;
+        inv.getRange(i + 1, 5).setValue(stock);
+        break;
+      }
+    }
+  }
+
+  tx.deleteRow(rowIndex);
+  return { message: 'تراکنش حذف و موجودی اصلاح شد' };
+}
+
+// ---------- ویرایش مستقیم موجودی یک آیتم (فقط مدیر) ----------
+// برای مواردی مثل شمارش فیزیکی انبار که با عدد سیستم فرق دارد. یک ردیف
+// «اصلاح موجودی» هم در تاریخچه ثبت می‌شود تا همه‌چیز قابل ردیابی بماند.
+function editInventory(payload) {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const inv = ss.getSheetByName(SHEET_INVENTORY);
+  const tx = ss.getSheetByName(SHEET_TRANSACTIONS);
+
+  const city = String(payload.city || '').trim();
+  const category = String(payload.category || '').trim();
+  const itemType = String(payload.itemType || '').trim();
+  const color = String(payload.color || '').trim();
+  const newStock = Number(payload.newStock);
+  const adminUsername = String(payload.adminUsername || '').trim();
+
+  if (!city || !itemType) throw new Error('اطلاعات آیتم ناقص است');
+  if (isNaN(newStock) || newStock < 0) throw new Error('مقدار موجودی جدید نامعتبر است');
+
+  const data = inv.getDataRange().getValues();
+  let rowIndex = -1, oldStock = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === city && data[i][1] === category && data[i][2] === itemType && data[i][3] === color) {
+      rowIndex = i + 1; oldStock = Number(data[i][4]) || 0; break;
+    }
+  }
+  if (rowIndex === -1) {
+    inv.appendRow([city, category, itemType, color, newStock]);
+  } else {
+    inv.getRange(rowIndex, 5).setValue(newStock);
+  }
+
+  const delta = newStock - oldStock;
+  if (delta !== 0) {
+    const now = new Date();
+    const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm');
+    const id = 'TX-' + now.getTime();
+    tx.appendRow([id, dateStr, city, category, itemType, color, 'اصلاح موجودی توسط مدیر', adminUsername, 'ADJUST', Math.abs(delta), newStock]);
+  }
+
+  return { newStock: newStock };
 }

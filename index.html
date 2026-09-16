@@ -146,13 +146,21 @@
   .view.active{ display:block; }
 
   /* ---------- Stat cards ---------- */
+  @keyframes fadeInUp{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
+
   .stat-grid{
     display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px;
   }
   .stat-card{
     background:var(--surface); border-radius:var(--radius-lg);
     padding:22px 22px 20px; box-shadow:var(--shadow);
+    animation: fadeInUp .45s ease both; transition: transform .18s ease, box-shadow .18s ease;
   }
+  .stat-card:hover{ transform:translateY(-2px); box-shadow:0 4px 14px -6px rgba(20,32,26,.18); }
+  .stat-grid .stat-card:nth-child(1){ animation-delay:.02s; }
+  .stat-grid .stat-card:nth-child(2){ animation-delay:.07s; }
+  .stat-grid .stat-card:nth-child(3){ animation-delay:.12s; }
+  .stat-grid .stat-card:nth-child(4){ animation-delay:.17s; }
   .stat-card .row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;}
   .stat-icon{
     width:30px;height:30px;display:flex;align-items:center;justify-content:center; opacity:.85;
@@ -169,6 +177,7 @@
   .panel{
     background:var(--surface); border-radius:var(--radius-lg);
     padding:24px; box-shadow:var(--shadow); margin-bottom:22px;
+    animation: fadeInUp .4s ease both;
   }
   .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; gap:10px; flex-wrap:wrap;}
   .panel-head h2{ margin:0; font-size:15.5px; font-weight:800; }
@@ -180,17 +189,19 @@
   .city-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; }
   .city-card{
     background:var(--bg); border-radius:var(--radius-md); padding:16px;
+    animation: fadeInUp .4s ease both; transition: transform .15s ease, background .15s ease;
   }
+  .city-card:hover{ transform:translateY(-2px); background:var(--surface-2); }
   .city-card .name{ font-weight:700; font-size:13.5px; margin-bottom:3px; }
   .city-card .amount{ font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; margin-bottom:10px;}
-  .city-card .amount span{ font-size:11px; font-weight:600; color:var(--ink-muted); }
   .bar-track{ height:6px; border-radius:6px; background:var(--surface-2); overflow:hidden; }
-  .bar-fill{ height:100%; border-radius:6px; background:var(--brand); }
+  .bar-fill{ height:100%; border-radius:6px; background:var(--brand); transition:width .7s cubic-bezier(.22,.9,.32,1); }
 
   /* ---------- Recent list ---------- */
   .recent-list{ display:flex; flex-direction:column; gap:2px; }
   .recent-row{
     display:flex; align-items:center; gap:12px; padding:11px 2px; font-size:12.8px;
+    animation: fadeInUp .35s ease both;
   }
   .recent-row + .recent-row{ border-top:1px solid var(--bg); }
   .op-pill{
@@ -198,6 +209,12 @@
   }
   .op-pill.IN{ background:var(--in-tint); color:var(--in); }
   .op-pill.OUT{ background:var(--out-tint); color:var(--out); }
+  .op-pill.ADJUST{ background:var(--surface-2); color:var(--ink-muted); }
+  .op-pill.ADJUST{ background:var(--surface-2); color:var(--ink-muted); }
+  .icon-btn{ border:none; background:none; color:var(--ink-faint); cursor:pointer; padding:5px; border-radius:7px; display:inline-flex; }
+  .icon-btn:hover{ background:var(--out-tint); color:var(--danger); }
+  .table-edit-btn{ padding:5px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); font-size:11px; font-weight:700; color:var(--ink-muted); cursor:pointer; }
+  .table-edit-btn:hover{ background:var(--surface-2); color:var(--ink); }
   .recent-row .meta{ flex:1; min-width:0; }
   .recent-row .meta .main{ font-weight:700; }
   .recent-row .meta .sub{ color:var(--ink-muted); font-size:11.5px; }
@@ -442,6 +459,18 @@
   </div>
 </div>
 
+<div id="edit-stock-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>ویرایش موجودی</h2>
+    <p id="edit-stock-desc"></p>
+    <input id="edit-stock-input" type="number" min="0" placeholder="موجودی جدید" />
+    <div class="row">
+      <button class="btn btn-ghost" onclick="closeEditStockModal()">انصراف</button>
+      <button class="btn btn-brand" onclick="submitEditStock()" id="edit-stock-submit-btn">ذخیره</button>
+    </div>
+  </div>
+</div>
+
 <div class="app hidden" id="app-shell">
 
   <aside class="sidebar">
@@ -547,21 +576,12 @@
         </div>
       </div>
 
-      <div class="two-col">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>موجودی به تفکیک شهر</h2>
-            <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('by-city')">مشاهده همه</span>
-          </div>
-          <div class="city-grid" id="dash-city-grid"></div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>موجودی به تفکیک شهر</h2>
+          <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('by-city')">مشاهده همه</span>
         </div>
-        <div class="panel">
-          <div class="panel-head">
-            <h2>آخرین تراکنش‌ها</h2>
-            <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('history')">مشاهده همه</span>
-          </div>
-          <div class="recent-list" id="dash-recent-list"></div>
-        </div>
+        <div class="city-grid" id="dash-city-grid"></div>
       </div>
 
       <div class="panel">
@@ -569,6 +589,14 @@
           <h2>توزیع موجودی بر اساس رنگ تجهیزات</h2>
         </div>
         <div class="chart-box"><canvas id="dash-type-chart"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>آخرین تراکنش‌ها</h2>
+          <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('history')">مشاهده همه</span>
+        </div>
+        <div class="recent-list" id="dash-recent-list"></div>
       </div>
     </section>
 
@@ -669,7 +697,7 @@
             <thead>
               <tr>
                 <th>تاریخ و ساعت</th><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th>
-                <th>نام شخص/راننده</th><th>ثبت‌کننده</th><th>عملیات</th><th>تعداد</th><th>موجودی پس از ثبت</th>
+                <th>نام شخص/راننده</th><th>ثبت‌کننده</th><th>عملیات</th><th>تعداد</th><th>موجودی پس از ثبت</th><th></th>
               </tr>
             </thead>
             <tbody id="history-tbody"></tbody>
@@ -712,7 +740,7 @@
         <div style="overflow-x:auto;">
           <table>
             <thead>
-              <tr><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th><th>موجودی فعلی</th></tr>
+              <tr><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th><th>موجودی فعلی</th><th></th></tr>
             </thead>
             <tbody id="bytype-tbody"></tbody>
           </table>
@@ -968,15 +996,17 @@ function logout(){
   localStorage.removeItem(SESSION_KEY);
   location.reload();
 }
+function isAdmin(){ return !!(SESSION && SESSION.role === 'مدیر'); }
+
 function applyRoleUI(){
-  const isAdmin = SESSION && SESSION.role === 'مدیر';
+  const admin = isAdmin();
   document.getElementById('user-name').textContent = SESSION ? SESSION.fullName : '—';
   document.getElementById('user-role').textContent = SESSION ? SESSION.role : '—';
   document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
-  document.getElementById('nav-settings').style.display = isAdmin ? '' : 'none';
-  document.getElementById('sidebar-connect-btn').style.display = isAdmin ? '' : 'none';
-  document.getElementById('settings-admin-area').classList.toggle('hidden', !isAdmin);
-  document.getElementById('settings-admin-locked').classList.toggle('hidden', isAdmin);
+  document.getElementById('nav-settings').style.display = admin ? '' : 'none';
+  document.getElementById('sidebar-connect-btn').style.display = admin ? '' : 'none';
+  document.getElementById('settings-admin-area').classList.toggle('hidden', !admin);
+  document.getElementById('settings-admin-locked').classList.toggle('hidden', admin);
 }
 
 async function changeMyPassword(){
@@ -1100,10 +1130,31 @@ function renderStats(){
   const totalIn = DATA.transactions.filter(t=>t.operation==='IN').reduce((a,t)=>a+Number(t.quantity),0);
   const totalOut = DATA.transactions.filter(t=>t.operation==='OUT').reduce((a,t)=>a+Number(t.quantity),0);
   const activeCities = Object.keys(totals).filter(c=>totals[c]>0).length;
-  document.getElementById('stat-total').textContent = toEnNum(totalStock);
-  document.getElementById('stat-in').textContent = toEnNum(totalIn);
-  document.getElementById('stat-out').textContent = toEnNum(totalOut);
-  document.getElementById('stat-cities').textContent = toEnNum(activeCities);
+  animateNumber('stat-total', totalStock);
+  animateNumber('stat-in', totalIn);
+  animateNumber('stat-out', totalOut);
+  animateNumber('stat-cities', activeCities);
+}
+
+// انیمیشن شمارش نرم برای اعداد کارت‌های آماری (به‌جای جهش ناگهانی عدد)
+const numberAnimState = {};
+function animateNumber(elId, target){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  target = Number(target) || 0;
+  const start = numberAnimState[elId] != null ? numberAnimState[elId] : 0;
+  if(start === target){ el.textContent = toEnNum(target); return; }
+  const duration = 550;
+  const t0 = performance.now();
+  function tick(now){
+    const p = Math.min(1, (now - t0) / duration);
+    const eased = 1 - Math.pow(1 - p, 3); // ease-out
+    const current = Math.round(start + (target - start) * eased);
+    el.textContent = toEnNum(current);
+    if(p < 1) requestAnimationFrame(tick);
+    else numberAnimState[elId] = target;
+  }
+  requestAnimationFrame(tick);
 }
 
 function cityCardsHtml(limit){
@@ -1114,18 +1165,30 @@ function cityCardsHtml(limit){
   if(entries.length===0){
     return '<div class="empty-state">هنوز موجودی‌ای ثبت نشده است.</div>';
   }
-  return entries.map(([city, total])=>{
+  return entries.map(([city, total], i)=>{
     const pct = Math.round((total/max)*100);
-    return `<div class="city-card">
+    return `<div class="city-card" style="animation-delay:${i*35}ms">
       <div class="name">${city}</div>
-      <div class="amount">${toEnNum(total)} <span>واحد</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      <div class="amount">${toEnNum(total)}</div>
+      <div class="bar-track"><div class="bar-fill" data-target="${pct}" style="width:0%"></div></div>
     </div>`;
   }).join('');
 }
-function renderDashCityGrid(){ document.getElementById('dash-city-grid').innerHTML = cityCardsHtml(4); }
+function animateBars(container){
+  const bars = (container || document).querySelectorAll('.bar-fill[data-target]');
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{ // یک فریم اضافه تا مرورگر state اولیه (0%) را قطعاً رندر کند
+      bars.forEach(b => { b.style.width = b.dataset.target + '%'; });
+    });
+  });
+}
+function renderDashCityGrid(){
+  document.getElementById('dash-city-grid').innerHTML = cityCardsHtml(8);
+  animateBars(document.getElementById('dash-city-grid'));
+}
 function renderByCity(){
   document.getElementById('city-full-grid').innerHTML = cityCardsHtml(null);
+  animateBars(document.getElementById('city-full-grid'));
   const totals = cityTotals();
   const labels = Object.keys(totals);
   const values = Object.values(totals);
@@ -1136,16 +1199,19 @@ function renderDashRecent(){
   const list = DATA.transactions.slice(0,5);
   const wrap = document.getElementById('dash-recent-list');
   if(list.length===0){ wrap.innerHTML = '<div class="empty-state">هنوز تراکنشی ثبت نشده است.</div>'; return; }
-  wrap.innerHTML = list.map(t=>`
-    <div class="recent-row">
-      <span class="op-pill ${t.operation}">${t.operation==='IN'?'ورود':'خروج'}</span>
+  wrap.innerHTML = list.map((t,i)=>{
+    const sign = t.operation==='OUT' ? '-' : '+';
+    return `
+    <div class="recent-row" style="animation-delay:${i*40}ms">
+      <span class="op-pill ${t.operation}">${opLabel(t.operation)}</span>
       <div class="meta">
         <div class="main">${colorDotHtml(t.color)}${t.itemType}${t.color? ' · '+t.color:''}</div>
         <div class="sub">${t.city} · ${t.person}</div>
       </div>
-      <div class="qty">${t.operation==='IN'?'+':'-'}${toEnNum(t.quantity)}</div>
+      <div class="qty">${sign}${toEnNum(t.quantity)}</div>
       <div class="time">${t.datetime}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderDashChart(){
@@ -1181,6 +1247,9 @@ function drawChart(canvasId, type, labels, datasets){
 /* ============================================================
    HISTORY TABLE
    ============================================================ */
+function opLabel(op){ return op==='IN' ? 'ورود' : (op==='OUT' ? 'خروج' : 'اصلاح'); }
+function jsEsc(s){ return String(s).replace(/'/g,"\\'"); }
+
 function renderHistory(){
   const citySel = document.getElementById('hf-city');
   fillSelectOnce(citySel, DATA.lists.cities, 'همه‌ی شهرها');
@@ -1203,8 +1272,11 @@ function renderHistory(){
     <tr>
       <td>${t.datetime}</td><td>${t.city}</td><td>${t.category}</td><td>${t.itemType}</td><td>${colorDotHtml(t.color)}${t.color||'—'}</td>
       <td>${t.person}</td><td>${t.registeredBy||'—'}</td>
-      <td><span class="op-pill ${t.operation}">${t.operation==='IN'?'ورود':'خروج'}</span></td>
+      <td><span class="op-pill ${t.operation}">${opLabel(t.operation)}</span></td>
       <td>${toEnNum(t.quantity)}</td><td>${toEnNum(t.balanceAfter)}</td>
+      <td>${isAdmin() ? `<button class="icon-btn" title="حذف این تراکنش" onclick="deleteTransactionRow('${jsEsc(t.id)}')">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+      </button>` : ''}</td>
     </tr>`).join('');
 }
 
@@ -1226,7 +1298,9 @@ function renderByType(){
   const tbody = document.getElementById('bytype-tbody');
   document.getElementById('bytype-empty').style.display = rows.length? 'none':'block';
   tbody.innerHTML = rows.map(r=>`
-    <tr><td>${r.city}</td><td>${r.category}</td><td>${r.itemType}</td><td>${colorDotHtml(r.color)}${r.color||'—'}</td><td>${toEnNum(r.stock)}</td></tr>
+    <tr><td>${r.city}</td><td>${r.category}</td><td>${r.itemType}</td><td>${colorDotHtml(r.color)}${r.color||'—'}</td><td>${toEnNum(r.stock)}</td>
+    <td>${isAdmin() ? `<button class="table-edit-btn" onclick="openEditStockModal('${jsEsc(r.city)}','${jsEsc(r.category)}','${jsEsc(r.itemType)}','${jsEsc(r.color)}', ${r.stock})">ویرایش</button>` : ''}</td>
+    </tr>
   `).join('');
 }
 
@@ -1435,6 +1509,78 @@ async function removeUser(username){
     renderAll();
     toast('کاربر حذف شد', false);
   }catch(err){ toast(err.message, true); }
+}
+
+/* ============================================================
+   ADMIN: حذف تراکنش و ویرایش مستقیم موجودی
+   ============================================================ */
+async function deleteTransactionRow(id){
+  if(!isAdmin()) return;
+  const t = DATA.transactions.find(x => x.id === id);
+  if(!t) return;
+  const ok = confirm(`حذف این تراکنش؟\n${t.city} · ${t.itemType}${t.color? ' · '+t.color:''} · ${opLabel(t.operation)} ${toEnNum(t.quantity)} عدد\n\nموجودی مربوطه هم به همان اندازه اصلاح می‌شود.`);
+  if(!ok) return;
+  try{
+    await apiPost('deleteTransaction', { id });
+    // موجودی محلی را دقیقاً مثل سمت سرور برعکس می‌کنیم (بدون نیاز به خواندن دوباره‌ی کل شیت)
+    if(t.operation === 'IN' || t.operation === 'OUT'){
+      const invRow = DATA.inventory.find(x => x.city===t.city && x.category===t.category && x.itemType===t.itemType && (x.color||'')===(t.color||''));
+      if(invRow){
+        invRow.stock = t.operation==='IN' ? Math.max(0, invRow.stock - t.quantity) : (invRow.stock + t.quantity);
+      }
+    }
+    DATA.transactions = DATA.transactions.filter(x => x.id !== id);
+    renderAll();
+    toast('تراکنش حذف و موجودی اصلاح شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+
+let editStockContext = null;
+function openEditStockModal(city, category, itemType, color, currentStock){
+  if(!isAdmin()) return;
+  editStockContext = { city, category, itemType, color, currentStock };
+  document.getElementById('edit-stock-desc').innerHTML =
+    `${city} · ${category} · ${itemType}${color? ' · '+colorDotHtml(color)+color : ''}<br>موجودی فعلی سیستم: <b>${toEnNum(currentStock)}</b>`;
+  document.getElementById('edit-stock-input').value = currentStock;
+  document.getElementById('edit-stock-modal').classList.remove('hidden');
+  document.getElementById('edit-stock-input').focus();
+}
+function closeEditStockModal(){
+  document.getElementById('edit-stock-modal').classList.add('hidden');
+  editStockContext = null;
+}
+async function submitEditStock(){
+  if(!editStockContext) return;
+  const newStock = Number(document.getElementById('edit-stock-input').value);
+  if(isNaN(newStock) || newStock < 0){ toast('عدد وارد شده معتبر نیست', true); return; }
+
+  const btn = document.getElementById('edit-stock-submit-btn');
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="loading-spin"></span> در حال ذخیره…';
+
+  const { city, category, itemType, color, currentStock } = editStockContext;
+  try{
+    await apiPost('editInventory', { city, category, itemType, color, newStock, adminUsername: SESSION ? SESSION.username : '' });
+
+    const invRow = DATA.inventory.find(x => x.city===city && x.category===category && x.itemType===itemType && (x.color||'')===(color||''));
+    if(invRow) invRow.stock = newStock; else DATA.inventory.push({ city, category, itemType, color, stock:newStock });
+
+    const delta = newStock - currentStock;
+    if(delta !== 0){
+      DATA.transactions.unshift({
+        id: 'local-'+Date.now(), datetime: new Date().toLocaleString('fa-IR'), city, category, itemType, color,
+        person: 'اصلاح موجودی توسط مدیر', registeredBy: SESSION ? SESSION.username : '',
+        operation: 'ADJUST', quantity: Math.abs(delta), balanceAfter: newStock
+      });
+    }
+    renderAll();
+    closeEditStockModal();
+    toast('موجودی به‌روزرسانی شد', false);
+  }catch(err){
+    toast(err.message, true);
+  }finally{
+    btn.disabled = false; btn.innerHTML = original;
+  }
 }
 
 /* ============================================================
