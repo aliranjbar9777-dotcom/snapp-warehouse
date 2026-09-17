@@ -260,17 +260,20 @@ function addTransaction(payload) {
 
   // اگر همین درخواست قبلاً با موفقیت پردازش شده (مثلاً به‌خاطر یک تلاش مجدد
   // امن پس از قطعی موقت شبکه)، دوباره ثبتش نمی‌کنیم — فقط نتیجه‌ی قبلی را برمی‌گردانیم.
-  if (clientId && tx.getLastRow() > 1) {
-    const idCol = tx.getRange(2, 1, tx.getLastRow() - 1, 1).getValues();
-    for (let i = 0; i < idCol.length; i++) {
-      if (idCol[i][0] === clientId) {
-        const existingRow = tx.getRange(i + 2, 1, 1, 11).getValues()[0];
-        return { id: existingRow[0], newStock: Number(existingRow[10]), dateStr: existingRow[1], deduped: true };
-      }
+  // از CacheService به‌جای خواندن کل شیت استفاده می‌کنیم: خیلی سریع‌تر است و
+  // برخلاف اسکن شیت، با بزرگ‌شدن تاریخچه کندتر نمی‌شود.
+  const cache = CacheService.getScriptCache();
+  const cacheKey = clientId ? ('tx_' + clientId) : null;
+  if (cacheKey) {
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      parsed.deduped = true;
+      return parsed;
     }
   }
 
-  // پیدا کردن یا ساختن ردیف موجودی مربوطه
+  // پیدا کردن ردیف موجودی مربوطه (اگر نبود، بعداً یکجا با مقدار نهایی ساخته می‌شود)
   const invData = inv.getDataRange().getValues();
   let rowIndex = -1;
   for (let i = 1; i < invData.length; i++) {
@@ -281,13 +284,7 @@ function addTransaction(payload) {
     }
   }
 
-  let currentStock = 0;
-  if (rowIndex === -1) {
-    inv.appendRow([city, category, itemType, color, 0]);
-    rowIndex = inv.getLastRow();
-  } else {
-    currentStock = Number(invData[rowIndex - 1][4]) || 0;
-  }
+  const currentStock = rowIndex === -1 ? 0 : (Number(invData[rowIndex - 1][4]) || 0);
 
   let newStock;
   if (operation === 'IN') {
@@ -299,7 +296,11 @@ function addTransaction(payload) {
     }
   }
 
-  inv.getRange(rowIndex, 5).setValue(newStock);
+  if (rowIndex === -1) {
+    inv.appendRow([city, category, itemType, color, newStock]); // یک فراخوانی به‌جای سه‌تا (append + getLastRow + setValue)
+  } else {
+    inv.getRange(rowIndex, 5).setValue(newStock);
+  }
 
   const now = new Date();
   const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm');
@@ -307,7 +308,9 @@ function addTransaction(payload) {
 
   tx.appendRow([id, dateStr, city, category, itemType, color, person, registeredBy, operation, quantity, newStock]);
 
-  return { id, newStock, dateStr };
+  const result = { id, newStock, dateStr };
+  if (cacheKey) cache.put(cacheKey, JSON.stringify(result), 300); // ۵ دقیقه برای پوشش تلاش‌های مجدد کافی است
+  return result;
 }
 
 // ---------- افزودن آیتم جدید به لیست‌های کشویی ----------
