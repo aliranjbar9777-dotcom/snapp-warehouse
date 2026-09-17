@@ -49,10 +49,11 @@ function doPost(e) {
 
     // ورود: برای اینکه بعد از لاگین مجبور به یک درخواست جداگانه‌ی دیگر برای
     // خواندن داده‌ها نباشیم (که کندی محسوسی ایجاد می‌کرد)، همین یک درخواست
-    // هم نتیجه‌ی ورود و هم کل داده‌های داشبورد را با هم برمی‌گرداند.
+    // هم نتیجه‌ی ورود و هم کل داده‌های داشبورد را با هم برمی‌گرداند — و شیت
+    // کاربران هم فقط یک‌بار خوانده می‌شود (نه یک‌بار برای ورود و یک‌بار برای لیست).
     if (action === 'login') {
-      const result = login(body.payload);
-      return jsonResponse({ ok: true, result: result, data: getAllData() });
+      const loginResult = loginAndGetData(body.payload);
+      return jsonResponse({ ok: true, result: loginResult.result, data: loginResult.data });
     }
 
     // برای عملیات‌های نوشتنی، دیگر کل شیت‌ها را دوباره نمی‌خوانیم (که کند بود)؛
@@ -95,6 +96,13 @@ function jsonResponse(obj) {
 // ---------- ساخت اولیه‌ی شیت‌ها ----------
 
 function setupSheets() {
+  // این تابع قبلاً روی هر درخواست (هر لاگین، هر ثبت تراکنش) دوباره اجرا می‌شد و
+  // چند فراخوانی اضافه به Google Sheets می‌زد که کندی محسوسی ایجاد می‌کرد.
+  // چون ساختار شیت‌ها فقط یک‌بار لازم است ساخته شود، از این به بعد بعد از
+  // اولین اجرای موفق، بقیه‌ی درخواست‌ها این تابع را کاملاً رد می‌کنند.
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('setupDone') === 'true') return;
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   let tx = ss.getSheetByName(SHEET_TRANSACTIONS);
@@ -137,11 +145,13 @@ function setupSheets() {
     users.appendRow(['admin', DEFAULT_ADMIN_HASH, 'مدیر سیستم', 'مدیر ارشد', true,
                       Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm')]);
   }
+
+  props.setProperty('setupDone', 'true');
 }
 
 // ---------- خواندن همه‌ی داده‌ها ----------
 
-function getAllData() {
+function getAllData(preloadedUserRows) {
   setupSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -181,9 +191,13 @@ function getAllData() {
   });
 
   // کاربران (بدون رمز عبور، فقط برای پنل مدیریت)
-  const usersSheet = ss.getSheetByName(SHEET_USERS);
-  const userValues = usersSheet.getDataRange().getValues();
-  userValues.shift();
+  // اگر از قبل (مثلاً حین ورود) یک‌بار خوانده شده، دوباره شیت را نمی‌خوانیم — سریع‌تر
+  let userValues = preloadedUserRows;
+  if (!userValues) {
+    const usersSheet = ss.getSheetByName(SHEET_USERS);
+    userValues = usersSheet.getDataRange().getValues();
+    userValues.shift();
+  }
   const users = userValues
     .filter(row => row[0])
     .map(row => ({
@@ -193,30 +207,36 @@ function getAllData() {
   return { transactions, inventory, lists: { cities, boxTypes, colors, others }, users };
 }
 
-// ---------- ورود کاربر ----------
+// ---------- ورود کاربر (یک‌باره: هم احراز هویت، هم بارگذاری کامل داده‌ها) ----------
 
-function login(payload) {
+function loginAndGetData(payload) {
   setupSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const users = ss.getSheetByName(SHEET_USERS);
+  const usersSheet = ss.getSheetByName(SHEET_USERS);
 
   const username = String(payload.username || '').trim();
   const passwordHash = String(payload.passwordHash || '').trim();
   if (!username || !passwordHash) throw new Error('نام کاربری و رمز عبور الزامی است');
 
-  const data = users.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === username) {
-      const active = data[i][4] === true || data[i][4] === 'true';
+  // شیت کاربران فقط یک‌بار خوانده می‌شود؛ هم برای احراز هویت هم برای ساخت لیست کاربران در ادامه استفاده می‌شود
+  const userRows = usersSheet.getDataRange().getValues();
+  userRows.shift();
+
+  let matchedUser = null;
+  for (let i = 0; i < userRows.length; i++) {
+    if (userRows[i][0] === username) {
+      const active = userRows[i][4] === true || userRows[i][4] === 'true';
       if (!active) throw new Error('این حساب کاربری غیرفعال شده است');
-      if (data[i][1] !== passwordHash) throw new Error('نام کاربری یا رمز عبور اشتباه است');
-      return { username: data[i][0], fullName: data[i][2], role: data[i][3] };
+      if (userRows[i][1] !== passwordHash) throw new Error('نام کاربری یا رمز عبور اشتباه است');
+      matchedUser = { username: userRows[i][0], fullName: userRows[i][2], role: userRows[i][3] };
+      break;
     }
   }
-  throw new Error('نام کاربری یا رمز عبور اشتباه است');
-}
+  if (!matchedUser) throw new Error('نام کاربری یا رمز عبور اشتباه است');
 
-// ---------- ثبت تراکنش (ورود/خروج) ----------
+  const data = getAllData(userRows); // همان ردیف‌های کاربران را دوباره پاس می‌دهیم، بدون خواندن مجدد شیت
+  return { result: matchedUser, data: data };
+}
 
 function addTransaction(payload) {
   setupSheets();
@@ -232,10 +252,23 @@ function addTransaction(payload) {
   const registeredBy = String(payload.registeredBy || '').trim();
   const operation = String(payload.operation || '').trim(); // 'IN' یا 'OUT'
   const quantity = Number(payload.quantity);
+  const clientId = String(payload.clientId || '').trim();
 
   if (!city || !itemType || !person) throw new Error('لطفاً همه‌ی فیلدهای الزامی را پر کنید');
   if (!quantity || quantity <= 0) throw new Error('تعداد باید عددی مثبت باشد');
   if (operation !== 'IN' && operation !== 'OUT') throw new Error('نوع عملیات نامعتبر است');
+
+  // اگر همین درخواست قبلاً با موفقیت پردازش شده (مثلاً به‌خاطر یک تلاش مجدد
+  // امن پس از قطعی موقت شبکه)، دوباره ثبتش نمی‌کنیم — فقط نتیجه‌ی قبلی را برمی‌گردانیم.
+  if (clientId && tx.getLastRow() > 1) {
+    const idCol = tx.getRange(2, 1, tx.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < idCol.length; i++) {
+      if (idCol[i][0] === clientId) {
+        const existingRow = tx.getRange(i + 2, 1, 1, 11).getValues()[0];
+        return { id: existingRow[0], newStock: Number(existingRow[10]), dateStr: existingRow[1], deduped: true };
+      }
+    }
+  }
 
   // پیدا کردن یا ساختن ردیف موجودی مربوطه
   const invData = inv.getDataRange().getValues();
@@ -270,7 +303,7 @@ function addTransaction(payload) {
 
   const now = new Date();
   const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm');
-  const id = 'TX-' + now.getTime();
+  const id = clientId || ('TX-' + now.getTime());
 
   tx.appendRow([id, dateStr, city, category, itemType, color, person, registeredBy, operation, quantity, newStock]);
 

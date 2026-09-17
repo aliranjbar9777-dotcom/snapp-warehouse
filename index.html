@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     /* پالت رنگی برگرفته از هویت بصری اسنپ: سبز پررنگ روی زمینه‌ی روشن و خنثی */
@@ -606,7 +607,7 @@
       <div class="topbar">
         <div>
           <h1>ثبت ورود / خروج تجهیزات</h1>
-          <p>شهر ← نوع تجهیز ← رنگ ← نام شخص ← نوع عملیات ← تعداد</p>
+          <p>شهر ← نوع تجهیز ← رنگ ← نوع عملیات ← تعداد — به نام <b id="entry-registrant-name" style="color:var(--ink);"></b> ثبت می‌شود</p>
         </div>
       </div>
 
@@ -631,10 +632,6 @@
               <span id="f-color-swatch" style="width:22px;height:22px;border-radius:7px;flex:none;border:1.5px solid var(--line);"></span>
               <select id="f-color" style="flex:1;"></select>
             </div>
-          </div>
-          <div class="field">
-            <label>نام شخص / راننده</label>
-            <input id="f-person" type="text" placeholder="مثلاً: علی رضایی" />
           </div>
           <div class="field full">
             <label>نوع عملیات</label>
@@ -698,7 +695,7 @@
             <thead>
               <tr>
                 <th>تاریخ و ساعت</th><th>شهر</th><th>دسته</th><th>نوع تجهیز</th><th>رنگ</th>
-                <th>نام شخص/راننده</th><th>ثبت‌کننده</th><th>عملیات</th><th>تعداد</th><th>موجودی پس از ثبت</th><th></th>
+                <th>ثبت‌کننده</th><th>عملیات</th><th>تعداد</th><th>موجودی پس از ثبت</th><th></th>
               </tr>
             </thead>
             <tbody id="history-tbody"></tbody>
@@ -732,6 +729,10 @@
           <h1>موجودی به تفکیک نوع و رنگ</h1>
           <p>ریز موجودی هر نوع تجهیز در هر شهر</p>
         </div>
+        <button class="btn btn-ghost" onclick="exportInventoryToExcel()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          خروجی اکسل موجودی
+        </button>
       </div>
       <div class="panel">
         <div class="filters-row">
@@ -943,8 +944,8 @@ async function apiGet(){
 // برای عملیات‌های نوشتنی (ثبت تراکنش، افزودن/حذف لیست و کاربر): فقط یک تلاش
 // شبکه‌ای امن، بدون retry خودکار روی پاسخ نامعتبر — DATA دیگر از سرور دوباره
 // خوانده نمی‌شود؛ هر بخش از UI خودش بعد از موفقیت، state محلی را به‌روز می‌کند.
-async function apiPost(action, payload){
-  return apiCall(action, payload, { retryOnBadResponse: false });
+async function apiPost(action, payload, options){
+  return apiCall(action, payload, Object.assign({ retryOnBadResponse: false }, options));
 }
 
 async function fetchData(){
@@ -1017,6 +1018,8 @@ function applyRoleUI(){
   document.getElementById('user-name').textContent = SESSION ? SESSION.fullName : '—';
   document.getElementById('user-role').textContent = SESSION ? SESSION.role : '—';
   document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
+  const registrantEl = document.getElementById('entry-registrant-name');
+  if(registrantEl) registrantEl.textContent = SESSION ? SESSION.fullName : '—';
   document.getElementById('nav-settings').style.display = admin ? '' : 'none';
   document.getElementById('sidebar-connect-btn').style.display = admin ? '' : 'none';
   document.getElementById('settings-admin-area').classList.toggle('hidden', !admin);
@@ -1302,7 +1305,7 @@ function renderHistory(){
   tbody.innerHTML = rows.map(t=>`
     <tr>
       <td>${t.datetime}</td><td>${t.city}</td><td>${t.category}</td><td>${t.itemType}</td><td>${colorDotHtml(t.color)}${t.color||'—'}</td>
-      <td>${t.person}</td><td>${t.registeredBy||'—'}</td>
+      <td>${t.person || t.registeredBy || '—'}</td>
       <td><span class="op-pill ${t.operation}">${opLabel(t.operation)}</span></td>
       <td>${toEnNum(t.quantity)}</td><td>${toEnNum(t.balanceAfter)}</td>
       <td>${isAdmin() ? `<button class="icon-btn" title="حذف این تراکنش" onclick="deleteTransactionRow('${jsEsc(t.id)}')">
@@ -1333,6 +1336,38 @@ function renderByType(){
     <td>${isAdmin() ? `<button class="table-edit-btn" onclick="openEditStockModal('${jsEsc(r.city)}','${jsEsc(r.category)}','${jsEsc(r.itemType)}','${jsEsc(r.color)}', ${r.stock})">ویرایش</button>` : ''}</td>
     </tr>
   `).join('');
+}
+
+function exportInventoryToExcel(){
+  if(typeof XLSX === 'undefined'){ toast('کتابخانه‌ی اکسل بارگذاری نشد؛ اتصال اینترنت را بررسی کنید', true); return; }
+  if(!DATA.inventory || DATA.inventory.length===0){ toast('هنوز موجودی‌ای برای خروجی گرفتن وجود ندارد', true); return; }
+
+  // شیت اول: ریز موجودی به تفکیک شهر، نوع و رنگ
+  const detailRows = DATA.inventory
+    .slice()
+    .sort((a,b)=> a.city.localeCompare(b.city,'fa') || b.stock - a.stock)
+    .map(r=>({
+      'شهر': r.city, 'دسته': r.category, 'نوع تجهیز': r.itemType,
+      'رنگ': r.color || '—', 'موجودی فعلی': r.stock
+    }));
+  const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+  detailSheet['!cols'] = [{wch:14},{wch:16},{wch:18},{wch:10},{wch:14}];
+
+  // شیت دوم: خلاصه‌ی موجودی هر شهر
+  const totals = cityTotals();
+  const summaryRows = Object.entries(totals)
+    .sort((a,b)=> b[1]-a[1])
+    .map(([city, stock])=>({ 'شهر': city, 'مجموع موجودی': stock }));
+  const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+  summarySheet['!cols'] = [{wch:16},{wch:16}];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, summarySheet, 'خلاصه شهرها');
+  XLSX.utils.book_append_sheet(wb, detailSheet, 'ریز موجودی');
+
+  const today = new Date().toLocaleDateString('en-CA'); // yyyy-mm-dd برای اسم فایل
+  XLSX.writeFile(wb, `موجودی-انبار-اسنپ-${today}.xlsx`);
+  toast('فایل اکسل دانلود شد', false);
 }
 
 function fillSelectOnce(selectEl, items, placeholder){
@@ -1399,41 +1434,52 @@ function updateStockPreview(){
 }
 
 function resetForm(){
-  document.getElementById('f-person').value = '';
   document.getElementById('f-qty').value = '';
   updateStockPreview();
+}
+
+function genClientId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
 async function submitTransaction(){
   const city = document.getElementById('f-city').value;
   const itemType = document.getElementById('f-itemtype').value;
   const color = currentCategory==='باکس' ? document.getElementById('f-color').value : '';
-  const person = document.getElementById('f-person').value.trim();
   const qty = Number(document.getElementById('f-qty').value);
 
   if(!city || !itemType){ toast('ابتدا شهر و نوع تجهیز را انتخاب کنید', true); return; }
-  if(!person){ toast('نام شخص / راننده را وارد کنید', true); return; }
   if(!qty || qty<=0){ toast('تعداد باید عددی مثبت باشد', true); return; }
+  if(!SESSION){ toast('نشست شما منقضی شده؛ دوباره وارد شوید', true); return; }
 
   const btn = document.getElementById('submit-btn');
   const originalHtml = btn.innerHTML;
   btn.disabled = true; // جلوگیری از دابل‌کلیک و ثبت تکراری
-  btn.innerHTML = '<span class="loading-spin"></span> در حال ثبت…';
 
   const payload = {
-    city, category: currentCategory, itemType, color, person,
-    registeredBy: SESSION ? SESSION.username : '', operation: currentOp, quantity: qty
+    city, category: currentCategory, itemType, color,
+    person: SESSION.fullName, registeredBy: SESSION.username,
+    operation: currentOp, quantity: qty, clientId: genClientId()
   };
 
   try{
-    const res = await apiPost('addTransaction', payload);
+    // retryOnBadResponse:true امن است چون clientId باعث می‌شود سرور، تلاش‌های
+    // تکراریِ همین یک ثبت را تشخیص بدهد و دوباره ثبتش نکند (بدون خطر دوبار شدن)
+    let res;
+    try{
+      btn.innerHTML = '<span class="loading-spin"></span> در حال ثبت…';
+      res = await apiPost('addTransaction', payload, { retryOnBadResponse: true });
+    }catch(firstErr){
+      throw firstErr;
+    }
     const r = res.result; // {id, newStock, dateStr}
 
     // به‌جای درخواست دوباره‌ی کل داده‌ها از گوگل‌شیت (که کند است)، همینجا
     // state محلی را با همان نتیجه‌ای که سرور برگردانده به‌روز می‌کنیم.
     DATA.transactions.unshift({
       id: r.id, datetime: r.dateStr, city, category: currentCategory, itemType, color,
-      person, registeredBy: payload.registeredBy, operation: currentOp,
+      person: payload.person, registeredBy: payload.registeredBy, operation: currentOp,
       quantity: qty, balanceAfter: r.newStock
     });
     const invRow = DATA.inventory.find(x => x.city===city && x.category===currentCategory && x.itemType===itemType && (x.color||'')===(color||''));
@@ -1442,7 +1488,6 @@ async function submitTransaction(){
 
     renderAll();
     toast(`تراکنش ثبت شد — موجودی جدید: ${toEnNum(r.newStock)}`, false);
-    document.getElementById('f-person').value = '';
     document.getElementById('f-qty').value = '';
   }catch(err){
     toast(err.message, true);
