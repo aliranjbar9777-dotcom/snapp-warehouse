@@ -548,7 +548,7 @@
       <div class="topbar">
         <div>
           <h1>نمای کلی انبار</h1>
-          <p id="dash-updated">در حال بارگذاری اطلاعات از Google Sheets…</p>
+          <p><span id="dash-welcome"></span> <span id="dash-updated">در حال بارگذاری اطلاعات از Google Sheets…</span></p>
         </div>
         <button class="btn btn-brand" onclick="switchView('entry')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -644,7 +644,7 @@
             <select id="f-itemtype"></select>
           </div>
           <div class="field" id="f-color-wrap">
-            <label>رنگ باکس</label>
+            <label id="f-color-label">رنگ باکس</label>
             <div style="display:flex; align-items:center; gap:8px;">
               <span id="f-color-swatch" style="width:22px;height:22px;border-radius:7px;flex:none;border:1.5px solid var(--line);"></span>
               <select id="f-color" style="flex:1;"></select>
@@ -815,7 +815,14 @@
           </div>
         </div>
 
-        <div class="panel" style="max-width:520px;">
+        <div class="panel" id="user-mgmt-locked-note" style="max-width:520px;">
+          <div class="admin-only-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            مدیریت کارشناسان و کاربران فقط برای نقش «مدیر ارشد» در دسترس است.
+          </div>
+        </div>
+
+        <div class="panel" id="user-mgmt-panel" style="max-width:520px;">
           <div class="panel-head"><h2>مدیریت کارشناسان و کاربران</h2></div>
           <div class="form-grid" style="margin-bottom:14px;">
             <div class="field"><label>نام کاربری</label><input id="nu-username" placeholder="مثلاً: sara.ahmadi" /></div>
@@ -871,7 +878,7 @@ let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google». تا وقتی این مقدار پر
 // نشود، دکمه‌ی ورود با گوگل نمایش داده نمی‌شود و فقط فرم نام‌کاربری/رمز کار می‌کند.
 // این مقدار باید دقیقاً با ثابت GOOGLE_CLIENT_ID در Code.gs یکی باشد.
-const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
 let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
 let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [] };
 let currentCategory = 'باکس';
@@ -1087,6 +1094,8 @@ function applyRoleUI(){
   document.getElementById('user-avatar').textContent = SESSION ? SESSION.fullName.trim().charAt(0) : '؟';
   const registrantEl = document.getElementById('entry-registrant-name');
   if(registrantEl) registrantEl.textContent = SESSION ? SESSION.fullName : '—';
+  const welcomeEl = document.getElementById('dash-welcome');
+  if(welcomeEl) welcomeEl.textContent = SESSION ? ('سلام ' + SESSION.fullName + ' 👋 ·') : '';
   document.getElementById('nav-settings').style.display = admin ? '' : 'none';
   document.getElementById('sidebar-connect-btn').style.display = admin ? '' : 'none';
   document.getElementById('settings-admin-area').classList.toggle('hidden', !admin);
@@ -1095,6 +1104,12 @@ function applyRoleUI(){
   // «منطقه‌ی خطر» (پاک کردن کامل) فقط برای مدیر ارشد قابل مشاهده است
   const dangerZone = document.getElementById('danger-zone-panel');
   if(dangerZone) dangerZone.classList.toggle('hidden', !superAdmin);
+
+  // مدیریت کارشناسان و کاربران فقط برای مدیر ارشد؛ مدیر عادی فقط یادداشت توضیحی می‌بیند
+  const userMgmtPanel = document.getElementById('user-mgmt-panel');
+  const userMgmtLockedNote = document.getElementById('user-mgmt-locked-note');
+  if(userMgmtPanel) userMgmtPanel.classList.toggle('hidden', !superAdmin);
+  if(userMgmtLockedNote) userMgmtLockedNote.classList.toggle('hidden', superAdmin);
 
   // فقط مدیر ارشد می‌تواند هنگام ساخت کاربر جدید، نقش «مدیر ارشد» را هم انتخاب کند
   const roleSelect = document.getElementById('nu-role');
@@ -1501,7 +1516,8 @@ function populateFormSelects(){
   itemSel.innerHTML = items.map(c=>`<option value="${c}">${c}</option>`).join('');
   if(prevItem) itemSel.value = prevItem;
 
-  document.getElementById('f-color-wrap').style.display = isBox ? '' : 'none';
+  document.getElementById('f-color-wrap').style.display = ''; // برای باکس و سایر تجهیزات هر دو نمایش داده می‌شود
+  document.getElementById('f-color-label').textContent = isBox ? 'رنگ باکس' : 'رنگ تجهیز';
   const colorSel = document.getElementById('f-color');
   const prevColor = colorSel.value;
   colorSel.innerHTML = DATA.lists.colors.map(c=>`<option value="${c}">${c}</option>`).join('');
@@ -1518,9 +1534,9 @@ function updateColorSwatch(){
 function updateStockPreview(){
   const city = document.getElementById('f-city').value;
   const itemType = document.getElementById('f-itemtype').value;
-  const color = currentCategory==='باکس' ? document.getElementById('f-color').value : '';
+  const color = document.getElementById('f-color').value;
   const row = DATA.inventory.find(r=> r.city===city && r.category===currentCategory && r.itemType===itemType && (r.color||'')===(color||''));
-  document.getElementById('stock-preview-val').textContent = row ? toEnNum(row.stock) + ' واحد' : '۰ واحد';
+  document.getElementById('stock-preview-val').textContent = row ? toEnNum(row.stock) + ' تعداد' : '۰ تعداد';
   updateColorSwatch();
 }
 
@@ -1537,7 +1553,7 @@ function genClientId(){
 async function submitTransaction(){
   const city = document.getElementById('f-city').value;
   const itemType = document.getElementById('f-itemtype').value;
-  const color = currentCategory==='باکس' ? document.getElementById('f-color').value : '';
+  const color = document.getElementById('f-color').value;
   const qty = Number(document.getElementById('f-qty').value);
 
   if(!city || !itemType){ toast('ابتدا شهر و نوع تجهیز را انتخاب کنید', true); return; }
@@ -1685,7 +1701,7 @@ async function linkGoogleEmail(username, currentEmail){
   const email = prompt('ایمیل گوگل این کاربر را وارد کنید (برای حذف اتصال، خالی بگذارید):', currentEmail || '');
   if(email === null) return; // انصراف
   try{
-    await apiPost('setUserEmail', { username, email: email.trim().toLowerCase() });
+    await apiPost('setUserEmail', { username, email: email.trim().toLowerCase(), requestingUsername: SESSION ? SESSION.username : '' });
     const u = DATA.users.find(x => x.username === username);
     if(u) u.email = email.trim().toLowerCase();
     renderAll();

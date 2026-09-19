@@ -31,7 +31,7 @@ const DEFAULT_ADMIN_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google» (Sign in with Google).
 // باید دقیقاً همان مقداری باشد که در index.html (متغیر GOOGLE_CLIENT_ID) گذاشته‌اید،
 // وگرنه توکن‌های ورودی رد می‌شوند. راهنمای ساخت آن در پیام همراه این کد آمده.
-const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
 
 // ---------- ورودی وب‌اپ ----------
 
@@ -467,19 +467,18 @@ function addUser(payload) {
   if (!passwordHash && !email) throw new Error('باید حداقل رمز عبور یا ایمیل گوگل را وارد کنید');
 
   const data = users.getDataRange().getValues();
+
+  let requesterIsSuperAdmin = false;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
+  }
+  if (!requesterIsSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند کاربر جدید بسازد');
+
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === username) throw new Error('این نام کاربری قبلاً ثبت شده است');
     if (email && String(data[i][6] || '').trim().toLowerCase() === email) {
       throw new Error('این ایمیل گوگل قبلاً به کاربر دیگری متصل است');
     }
-  }
-
-  if (role === 'مدیر ارشد') {
-    let requesterIsSuperAdmin = false;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
-    }
-    if (!requesterIsSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند کاربر مدیر ارشد دیگری بسازد');
   }
 
   users.appendRow([username, passwordHash, fullName, role, true,
@@ -496,10 +495,18 @@ function setUserEmail(payload) {
 
   const username = String(payload.username || '').trim();
   const email = String(payload.email || '').trim().toLowerCase();
+  const requestingUsername = String(payload.requestingUsername || '').trim();
 
   const data = users.getDataRange().getValues();
+
+  let requesterIsSuperAdmin = false;
   for (let i = 1; i < data.length; i++) {
-    if (email && i > 0 && data[i][0] !== username && String(data[i][6] || '').trim().toLowerCase() === email) {
+    if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
+  }
+  if (!requesterIsSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند ایمیل گوگل کاربران را مدیریت کند');
+
+  for (let i = 1; i < data.length; i++) {
+    if (email && data[i][0] !== username && String(data[i][6] || '').trim().toLowerCase() === email) {
       throw new Error('این ایمیل گوگل قبلاً به کاربر دیگری متصل است');
     }
   }
@@ -525,13 +532,11 @@ function deleteUser(payload) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === requestingUsername && data[i][3] === 'مدیر ارشد') { requesterIsSuperAdmin = true; break; }
   }
+  if (!requesterIsSuperAdmin) throw new Error('فقط مدیر ارشد می‌تواند کاربر حذف کند');
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === username) {
       if (data.length === 2) throw new Error('حداقل یک کاربر باید در سامانه باقی بماند');
-      if (data[i][3] === 'مدیر ارشد' && !requesterIsSuperAdmin) {
-        throw new Error('فقط مدیر ارشد می‌تواند حساب مدیر ارشد دیگری را حذف کند');
-      }
       users.deleteRow(i + 1);
       return { message: 'کاربر حذف شد' };
     }
