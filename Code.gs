@@ -28,6 +28,11 @@ const SHEET_USERS        = 'Users';
 // رمز عبور پیش‌فرض admin123 به‌صورت هش SHA-256 (کلاینت هم با همین الگوریتم هش می‌کند)
 const DEFAULT_ADMIN_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
 
+// Client ID پروژه‌ی Google Cloud برای «ورود با Google» (Sign in with Google).
+// باید دقیقاً همان مقداری باشد که در index.html (متغیر GOOGLE_CLIENT_ID) گذاشته‌اید،
+// وگرنه توکن‌های ورودی رد می‌شوند. راهنمای ساخت آن در پیام همراه این کد آمده.
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
+
 // ---------- ورودی وب‌اپ ----------
 
 function doGet(e) {
@@ -55,6 +60,10 @@ function doPost(e) {
       const loginResult = loginAndGetData(body.payload);
       return jsonResponse({ ok: true, result: loginResult.result, data: loginResult.data });
     }
+    if (action === 'googleLogin') {
+      const loginResult = googleLoginAndGetData(body.payload);
+      return jsonResponse({ ok: true, result: loginResult.result, data: loginResult.data });
+    }
 
     // برای عملیات‌های نوشتنی، دیگر کل شیت‌ها را دوباره نمی‌خوانیم (که کند بود)؛
     // هر تابع فقط نتیجه‌ی لازم برای به‌روزرسانی محلی در مرورگر را برمی‌گرداند.
@@ -67,6 +76,8 @@ function doPost(e) {
       result = deleteListItem(body.payload);
     } else if (action === 'addUser') {
       result = addUser(body.payload);
+    } else if (action === 'setUserEmail') {
+      result = setUserEmail(body.payload);
     } else if (action === 'deleteUser') {
       result = deleteUser(body.payload);
     } else if (action === 'changePassword') {
@@ -140,13 +151,26 @@ function setupSheets() {
   let users = ss.getSheetByName(SHEET_USERS);
   if (!users) users = ss.insertSheet(SHEET_USERS);
   if (users.getLastRow() === 0) {
-    users.appendRow(['نام کاربری', 'رمز عبور (هش‌شده)', 'نام و نام خانوادگی', 'نقش', 'فعال', 'تاریخ ایجاد']);
+    users.appendRow(['نام کاربری', 'رمز عبور (هش‌شده)', 'نام و نام خانوادگی', 'نقش', 'فعال', 'تاریخ ایجاد', 'ایمیل گوگل']);
     users.setFrozenRows(1);
     users.appendRow(['admin', DEFAULT_ADMIN_HASH, 'مدیر سیستم', 'مدیر ارشد', true,
-                      Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm')]);
+                      Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm'), '']);
   }
 
   props.setProperty('setupDone', 'true');
+}
+
+// شیت‌هایی که قبل از اضافه‌شدن «ورود با Google» ساخته شده‌اند، ستون هفتم
+// (ایمیل گوگل) را ندارند. این تابع فقط یک‌بار آن را اضافه می‌کند؛ چون
+// setupSheets بعد از اولین اجرا کامل رد می‌شود، این بررسی جداگانه لازم است.
+function ensureUserEmailColumn(usersSheet) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('emailColAdded') === 'true') return;
+  const header = usersSheet.getRange(1, 7).getValue();
+  if (header !== 'ایمیل گوگل') {
+    usersSheet.getRange(1, 7).setValue('ایمیل گوگل');
+  }
+  props.setProperty('emailColAdded', 'true');
 }
 
 // ---------- خواندن همه‌ی داده‌ها ----------
@@ -195,13 +219,15 @@ function getAllData(preloadedUserRows) {
   let userValues = preloadedUserRows;
   if (!userValues) {
     const usersSheet = ss.getSheetByName(SHEET_USERS);
+    ensureUserEmailColumn(usersSheet);
     userValues = usersSheet.getDataRange().getValues();
     userValues.shift();
   }
   const users = userValues
     .filter(row => row[0])
     .map(row => ({
-      username: row[0], fullName: row[2], role: row[3], active: row[4] === true || row[4] === 'true'
+      username: row[0], fullName: row[2], role: row[3], active: row[4] === true || row[4] === 'true',
+      email: row[6] || ''
     }));
 
   return { transactions, inventory, lists: { cities, boxTypes, colors, others }, users };
@@ -213,6 +239,7 @@ function loginAndGetData(payload) {
   setupSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const usersSheet = ss.getSheetByName(SHEET_USERS);
+  ensureUserEmailColumn(usersSheet);
 
   const username = String(payload.username || '').trim();
   const passwordHash = String(payload.passwordHash || '').trim();
@@ -235,6 +262,59 @@ function loginAndGetData(payload) {
   if (!matchedUser) throw new Error('نام کاربری یا رمز عبور اشتباه است');
 
   const data = getAllData(userRows); // همان ردیف‌های کاربران را دوباره پاس می‌دهیم، بدون خواندن مجدد شیت
+  return { result: matchedUser, data: data };
+}
+
+// ---------- ورود با Google: توکن گوگل را نزد خودِ گوگل اعتبارسنجی می‌کنیم ----------
+
+function googleLoginAndGetData(payload) {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = ss.getSheetByName(SHEET_USERS);
+  ensureUserEmailColumn(usersSheet);
+
+  const credential = String(payload.credential || '').trim();
+  if (!credential) throw new Error('توکن ورود گوگل دریافت نشد');
+
+  // اعتبارسنجی توکن نزد خودِ گوگل (Apps Script کتابخانه‌ی JWT ندارد، پس از
+  // همین سرویس رسمی گوگل برای بررسی امضا و انقضا استفاده می‌کنیم)
+  const resp = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential),
+    { muteHttpExceptions: true }
+  );
+  if (resp.getResponseCode() !== 200) {
+    throw new Error('اعتبارسنجی ورود گوگل ناموفق بود؛ دوباره تلاش کنید');
+  }
+  const info = JSON.parse(resp.getContentText());
+
+  if (GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('PASTE_') && info.aud !== GOOGLE_CLIENT_ID) {
+    throw new Error('این ورود برای این سامانه معتبر نیست');
+  }
+  if (info.email_verified !== 'true' && info.email_verified !== true) {
+    throw new Error('ایمیل گوگل شما هنوز تأیید نشده است');
+  }
+
+  const email = String(info.email || '').trim().toLowerCase();
+  if (!email) throw new Error('ایمیلی از گوگل دریافت نشد');
+
+  const userRows = usersSheet.getDataRange().getValues();
+  userRows.shift();
+
+  let matchedUser = null;
+  for (let i = 0; i < userRows.length; i++) {
+    const rowEmail = String(userRows[i][6] || '').trim().toLowerCase();
+    if (rowEmail && rowEmail === email) {
+      const active = userRows[i][4] === true || userRows[i][4] === 'true';
+      if (!active) throw new Error('این حساب کاربری غیرفعال شده است');
+      matchedUser = { username: userRows[i][0], fullName: userRows[i][2], role: userRows[i][3] };
+      break;
+    }
+  }
+  if (!matchedUser) {
+    throw new Error('ایمیل گوگل شما (' + email + ') به هیچ حسابی در سامانه متصل نیست. از مدیر انبار بخواهید آن را اضافه کند.');
+  }
+
+  const data = getAllData(userRows);
   return { result: matchedUser, data: data };
 }
 
@@ -374,18 +454,24 @@ function addUser(payload) {
   setupSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const users = ss.getSheetByName(SHEET_USERS);
+  ensureUserEmailColumn(users);
 
   const username = String(payload.username || '').trim();
   const passwordHash = String(payload.passwordHash || '').trim();
   const fullName = String(payload.fullName || '').trim();
   const role = String(payload.role || 'کارشناس').trim();
   const requestingUsername = String(payload.requestingUsername || '').trim();
+  const email = String(payload.email || '').trim().toLowerCase();
 
-  if (!username || !passwordHash || !fullName) throw new Error('همه‌ی فیلدهای کاربر الزامی است');
+  if (!username || !fullName) throw new Error('نام کاربری و نام و نام خانوادگی الزامی است');
+  if (!passwordHash && !email) throw new Error('باید حداقل رمز عبور یا ایمیل گوگل را وارد کنید');
 
   const data = users.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === username) throw new Error('این نام کاربری قبلاً ثبت شده است');
+    if (email && String(data[i][6] || '').trim().toLowerCase() === email) {
+      throw new Error('این ایمیل گوگل قبلاً به کاربر دیگری متصل است');
+    }
   }
 
   if (role === 'مدیر ارشد') {
@@ -397,8 +483,33 @@ function addUser(payload) {
   }
 
   users.appendRow([username, passwordHash, fullName, role, true,
-                    Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm')]);
+                    Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tehran', 'yyyy/MM/dd HH:mm'), email]);
   return { message: 'کاربر جدید ساخته شد' };
+}
+
+// ---------- اتصال/تغییر ایمیل گوگل یک کاربر موجود ----------
+function setUserEmail(payload) {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const users = ss.getSheetByName(SHEET_USERS);
+  ensureUserEmailColumn(users);
+
+  const username = String(payload.username || '').trim();
+  const email = String(payload.email || '').trim().toLowerCase();
+
+  const data = users.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (email && i > 0 && data[i][0] !== username && String(data[i][6] || '').trim().toLowerCase() === email) {
+      throw new Error('این ایمیل گوگل قبلاً به کاربر دیگری متصل است');
+    }
+  }
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === username) {
+      users.getRange(i + 1, 7).setValue(email);
+      return { message: email ? 'ایمیل گوگل متصل شد' : 'ایمیل گوگل حذف شد' };
+    }
+  }
+  throw new Error('کاربر یافت نشد');
 }
 
 function deleteUser(payload) {

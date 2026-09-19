@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     /* پالت رنگی برگرفته از هویت بصری اسنپ: سبز پررنگ روی زمینه‌ی روشن و خنثی */
@@ -381,6 +382,8 @@
   .login-submit:disabled{ opacity:.75; cursor:default; }
   .login-foot{ text-align:center; margin-top:18px; font-size:11.3px; color:var(--ink-faint); }
   .login-foot button{ border:none; background:none; color:var(--ink-faint); font-size:11.3px; text-decoration:underline; cursor:pointer; }
+  .login-divider{ display:flex; align-items:center; gap:10px; margin:2px 0 16px; color:var(--ink-faint); font-size:11.5px; }
+  .login-divider::before, .login-divider::after{ content:''; flex:1; height:1px; background:var(--line); }
 
   .chart-box{ height:230px; }
 
@@ -431,6 +434,12 @@
     <h1>ورود به انبار اسنپ</h1>
     <p class="sub">با نام کاربری و رمز عبوری که کارشناس مدیر سیستم برای شما ساخته، وارد شوید.</p>
     <div class="login-error" id="login-error"></div>
+
+    <div id="google-signin-wrap" class="hidden">
+      <div id="google-signin-btn" style="display:flex; justify-content:center; margin-bottom:14px;"></div>
+      <div class="login-divider"><span>یا</span></div>
+    </div>
+
     <div class="login-field">
       <label>نام کاربری</label>
       <input id="login-username" type="text" autocomplete="username" placeholder="مثلاً: ali.rezaei" />
@@ -584,6 +593,14 @@
           <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('by-city')">مشاهده همه</span>
         </div>
         <div class="city-grid" id="dash-city-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>موجودی به تفکیک محصول</h2>
+          <span class="hint" style="cursor:pointer;color:var(--brand-darker);font-weight:700;" onclick="switchView('by-type')">مشاهده همه</span>
+        </div>
+        <div class="city-grid" id="dash-product-grid"></div>
       </div>
 
       <div class="panel">
@@ -802,7 +819,7 @@
           <div class="panel-head"><h2>مدیریت کارشناسان و کاربران</h2></div>
           <div class="form-grid" style="margin-bottom:14px;">
             <div class="field"><label>نام کاربری</label><input id="nu-username" placeholder="مثلاً: sara.ahmadi" /></div>
-            <div class="field"><label>رمز عبور اولیه</label><input id="nu-password" type="password" placeholder="حداقل ۶ کاراکتر" /></div>
+            <div class="field"><label>رمز عبور اولیه (اختیاری اگر ایمیل گوگل بدهید)</label><input id="nu-password" type="password" placeholder="حداقل ۶ کاراکتر" /></div>
             <div class="field"><label>نام و نام خانوادگی</label><input id="nu-fullname" placeholder="مثلاً: سارا احمدی" /></div>
             <div class="field">
               <label>نقش</label>
@@ -810,6 +827,10 @@
                 <option value="کارشناس">کارشناس</option>
                 <option value="مدیر">مدیر</option>
               </select>
+            </div>
+            <div class="field full">
+              <label>ایمیل گوگل (اختیاری — برای ورود سریع با Google)</label>
+              <input id="nu-email" type="email" placeholder="مثلاً: sara.ahmadi@gmail.com" />
             </div>
           </div>
           <button class="btn btn-brand" onclick="createUser()">ساخت کاربر جدید</button>
@@ -846,6 +867,11 @@ const SESSION_KEY = 'snapp_warehouse_session';
 // فقط نقش «مدیر» می‌تواند از داخل خودِ اپ (سایدبار) این آدرس را تغییر بدهد.
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbw0QQ6OdyvEo0R2eWV04RmT6Va6-WhosKLmUab2Tm1IF9FnZn2LZyHuh0D7R4z56xdN/exec';
 let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
+
+// Client ID پروژه‌ی Google Cloud برای «ورود با Google». تا وقتی این مقدار پر
+// نشود، دکمه‌ی ورود با گوگل نمایش داده نمی‌شود و فقط فرم نام‌کاربری/رمز کار می‌کند.
+// این مقدار باید دقیقاً با ثابت GOOGLE_CLIENT_ID در Code.gs یکی باشد.
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
 let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
 let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [] };
 let currentCategory = 'باکس';
@@ -961,12 +987,53 @@ function showLoginScreen(){
   document.getElementById('boot-loading')?.classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.add('hidden');
+  initGoogleSignIn();
 }
 function showApp(){
   document.getElementById('boot-loading')?.classList.add('hidden');
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-shell').classList.remove('hidden');
   applyRoleUI();
+}
+
+/* ============================================================
+   ورود با Google (اختیاری — فقط اگر GOOGLE_CLIENT_ID تنظیم شده باشد)
+   ============================================================ */
+function isGoogleSignInConfigured(){
+  return !!GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('PASTE_');
+}
+function initGoogleSignIn(attempt){
+  attempt = attempt || 1;
+  if(!isGoogleSignInConfigured()) return; // هنوز تنظیم نشده؛ فقط فرم نام‌کاربری/رمز نمایش داده می‌شود
+  if(!(window.google && google.accounts && google.accounts.id)){
+    if(attempt < 15) setTimeout(()=>initGoogleSignIn(attempt+1), 300); // اسکریپت گوگل هنوز لود نشده
+    return;
+  }
+  document.getElementById('google-signin-wrap').classList.remove('hidden');
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
+  google.accounts.id.renderButton(document.getElementById('google-signin-btn'), {
+    theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', logo_alignment: 'center', width: 280
+  });
+}
+async function handleGoogleCredential(response){
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  try{
+    const json = await withTimeout(
+      apiCall('googleLogin', { credential: response.credential }, { retryOnBadResponse: true }),
+      15000, 'اتصال بیش از حد طول کشید. دوباره تلاش کنید.'
+    );
+    SESSION = json.result;
+    DATA = json.data;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(SESSION));
+    document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
+    renderAll();
+    showApp();
+    toast('خوش آمدید، ' + SESSION.fullName, false);
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }
 }
 
 async function doLogin(){
@@ -1106,6 +1173,29 @@ function cityTotals(){
   DATA.inventory.forEach(r=>{ map[r.city] = (map[r.city]||0) + Number(r.stock||0); });
   return map;
 }
+function productTotals(){
+  const map = {};
+  DATA.inventory.forEach(r=>{ map[r.itemType] = (map[r.itemType]||0) + Number(r.stock||0); });
+  return map;
+}
+function genericCardsHtml(totalsMap, limit){
+  let entries = Object.entries(totalsMap).sort((a,b)=>b[1]-a[1]);
+  if(limit) entries = entries.slice(0, limit);
+  const max = Math.max(1, ...entries.map(e=>e[1]));
+  if(entries.length===0) return '<div class="empty-state">هنوز موجودی‌ای ثبت نشده است.</div>';
+  return entries.map(([label, total], i)=>{
+    const pct = Math.round((total/max)*100);
+    return `<div class="city-card" style="animation-delay:${i*35}ms">
+      <div class="name">${label}</div>
+      <div class="amount">${toEnNum(total)}</div>
+      <div class="bar-track"><div class="bar-fill" data-target="${pct}" style="width:0%"></div></div>
+    </div>`;
+  }).join('');
+}
+function renderDashProductGrid(){
+  document.getElementById('dash-product-grid').innerHTML = genericCardsHtml(productTotals(), 8);
+  animateBars(document.getElementById('dash-product-grid'));
+}
 
 /* ============================================================
    رنگ واقعی هر تجهیز: تا نمودارها و جدول‌ها با همان رنگی که موقع
@@ -1149,6 +1239,7 @@ function renderAll(){
   populateFormSelects();
   renderStats();
   renderDashCityGrid();
+  renderDashProductGrid();
   renderDashRecent();
   renderDashChart();
   renderHistory();
@@ -1553,11 +1644,15 @@ function renderUserList(){
   el.innerHTML = DATA.users.map(u=>{
     const badgeClass = u.role==='مدیر ارشد' ? 'super' : (u.role==='مدیر' ? '' : 'staff');
     const canDelete = isSuperAdmin() || u.role !== 'مدیر ارشد'; // مدیر عادی نمی‌تواند مدیر ارشد را حذف کند
+    const safeUsername = u.username.replace(/'/g,"\\'");
+    const emailLine = u.email
+      ? `<span title="ایمیل گوگل متصل">📧 ${u.email}</span>`
+      : `<span style="cursor:pointer; text-decoration:underline;" onclick="linkGoogleEmail('${safeUsername}','')">اتصال ایمیل گوگل</span>`;
     return `
     <div class="user-row">
       <span class="badge ${badgeClass}">${u.role}</span>
-      <div class="uname"><b>${u.fullName}</b><span>@${u.username}</span></div>
-      ${canDelete ? `<button class="del-btn" onclick="removeUser('${u.username.replace(/'/g,"\\'")}')" title="حذف کاربر">
+      <div class="uname"><b>${u.fullName}</b><span>@${u.username} · ${emailLine}</span></div>
+      ${canDelete ? `<button class="del-btn" onclick="removeUser('${safeUsername}')" title="حذف کاربر">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>` : ''}
     </div>`;
@@ -1568,17 +1663,33 @@ async function createUser(){
   const password = document.getElementById('nu-password').value;
   const fullName = document.getElementById('nu-fullname').value.trim();
   const role = document.getElementById('nu-role').value;
-  if(!username || !password || !fullName){ toast('همه‌ی فیلدهای کاربر جدید را پر کنید', true); return; }
-  if(password.length < 4){ toast('رمز عبور باید حداقل ۴ کاراکتر باشد', true); return; }
+  const email = document.getElementById('nu-email').value.trim().toLowerCase();
+
+  if(!username || !fullName){ toast('نام کاربری و نام و نام خانوادگی را پر کنید', true); return; }
+  if(!password && !email){ toast('حداقل رمز عبور یا ایمیل گوگل را وارد کنید', true); return; }
+  if(password && password.length < 4){ toast('رمز عبور باید حداقل ۴ کاراکتر باشد', true); return; }
+
   try{
-    const passwordHash = await sha256Hex(password);
-    await apiPost('addUser', { username, passwordHash, fullName, role, requestingUsername: SESSION ? SESSION.username : '' });
-    DATA.users.push({ username, fullName, role, active: true });
+    const passwordHash = password ? await sha256Hex(password) : '';
+    await apiPost('addUser', { username, passwordHash, fullName, role, email, requestingUsername: SESSION ? SESSION.username : '' });
+    DATA.users.push({ username, fullName, role, active: true, email });
     document.getElementById('nu-username').value = '';
     document.getElementById('nu-password').value = '';
     document.getElementById('nu-fullname').value = '';
+    document.getElementById('nu-email').value = '';
     renderAll();
     toast('کاربر جدید ساخته شد', false);
+  }catch(err){ toast(err.message, true); }
+}
+async function linkGoogleEmail(username, currentEmail){
+  const email = prompt('ایمیل گوگل این کاربر را وارد کنید (برای حذف اتصال، خالی بگذارید):', currentEmail || '');
+  if(email === null) return; // انصراف
+  try{
+    await apiPost('setUserEmail', { username, email: email.trim().toLowerCase() });
+    const u = DATA.users.find(x => x.username === username);
+    if(u) u.email = email.trim().toLowerCase();
+    renderAll();
+    toast(email ? 'ایمیل گوگل متصل شد' : 'ایمیل گوگل حذف شد', false);
   }catch(err){ toast(err.message, true); }
 }
 async function removeUser(username){
