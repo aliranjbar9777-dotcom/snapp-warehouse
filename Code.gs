@@ -31,7 +31,7 @@ const DEFAULT_ADMIN_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google» (Sign in with Google).
 // باید دقیقاً همان مقداری باشد که در index.html (متغیر GOOGLE_CLIENT_ID) گذاشته‌اید،
 // وگرنه توکن‌های ورودی رد می‌شوند. راهنمای ساخت آن در پیام همراه این کد آمده.
-const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
 
 // ---------- ورودی وب‌اپ ----------
 
