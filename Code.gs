@@ -31,15 +31,81 @@ const DEFAULT_ADMIN_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google» (Sign in with Google).
 // باید دقیقاً همان مقداری باشد که در index.html (متغیر GOOGLE_CLIENT_ID) گذاشته‌اید،
 // وگرنه توکن‌های ورودی رد می‌شوند. راهنمای ساخت آن در پیام همراه این کد آمده.
-const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
+
+// ---------- نشست (Session) — هسته‌ی امنیتی ----------
+// قبلاً چند عملیات فقط به یک نام‌کاربری که خودِ کلاینت در درخواست می‌فرستاد
+// اعتماد می‌کردند (بدون اثبات این‌که واقعاً همان کاربر است) — یعنی هرکسی با
+// دانستن آدرس Apps Script می‌توانست خودش را جای مدیر جا بزند. از این به بعد،
+// بعد از ورود موفق یک توکن نشست تصادفی و غیرقابل‌حدس ساخته می‌شود که فقط خودِ
+// سرور (در CacheService) آن را می‌شناسد؛ هر عملیات حساس باید این توکن را
+// همراه داشته باشد و هویت واقعی کاربر همیشه از روی همین توکن خوانده می‌شود،
+// نه از روی چیزی که کلاینت ادعا کرده.
+const SESSION_TTL_SECONDS = 21600; // ۶ ساعت (حداکثر مجاز CacheService)
+
+function createSession(user) {
+  const token = Utilities.getUuid();
+  CacheService.getScriptCache().put('session_' + token, JSON.stringify(user), SESSION_TTL_SECONDS);
+  return token;
+}
+
+// ---------- شمارنده‌های جمع کل ورود/خروج ----------
+// به‌جای این‌که هر بار برای نمایش «مجموع ورود/خروج» کل تاریخچه‌ی تراکنش‌ها را
+// بخوانیم و جمع بزنیم (که با بزرگ‌شدن تاریخچه کندتر می‌شد)، این دو عدد را
+// همیشه به‌روز نگه می‌داریم و فقط همین دو مقدار را می‌خوانیم — خیلی سریع‌تر.
+function getRunningTotals() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    totalIn: Number(props.getProperty('totalIn') || 0),
+    totalOut: Number(props.getProperty('totalOut') || 0)
+  };
+}
+function adjustRunningTotals(deltaIn, deltaOut) {
+  if (!deltaIn && !deltaOut) return;
+  const props = PropertiesService.getScriptProperties();
+  const totals = getRunningTotals();
+  props.setProperties({
+    totalIn: String(Math.max(0, totals.totalIn + (deltaIn || 0))),
+    totalOut: String(Math.max(0, totals.totalOut + (deltaOut || 0)))
+  });
+}
+function resetRunningTotals() {
+  PropertiesService.getScriptProperties().setProperties({ totalIn: '0', totalOut: '0' });
+}
+
+function getSessionUser(sessionToken) {
+  const token = String(sessionToken || '').trim();
+  if (!token) throw new Error('نشست معتبر نیست؛ دوباره وارد شوید');
+  const raw = CacheService.getScriptCache().get('session_' + token);
+  if (!raw) throw new Error('نشست شما منقضی شده؛ دوباره وارد شوید');
+  return JSON.parse(raw); // { username, fullName, role }
+}
+
+function requireAdmin(sessionUser) {
+  if (sessionUser.role !== 'مدیر' && sessionUser.role !== 'مدیر ارشد') {
+    throw new Error('این عملیات فقط برای مدیران مجاز است');
+  }
+}
+
+function requireSuperAdmin(sessionUser) {
+  if (sessionUser.role !== 'مدیر ارشد') {
+    throw new Error('این عملیات فقط برای مدیر ارشد مجاز است');
+  }
+}
 
 // ---------- ورودی وب‌اپ ----------
 
 function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'getData';
+    const token = e && e.parameter && e.parameter.token;
     if (action === 'getData') {
+      getSessionUser(token); // فقط کاربر واردشده می‌تواند داده بخواند
       return jsonResponse({ ok: true, data: getAllData() });
+    }
+    if (action === 'getHistory') {
+      getSessionUser(token);
+      return jsonResponse({ ok: true, data: getHistoryData() });
     }
     return jsonResponse({ ok: false, error: 'اکشن نامعتبر است' });
   } catch (err) {
@@ -51,43 +117,64 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
+    const payload = body.payload || {};
 
     // ورود: برای اینکه بعد از لاگین مجبور به یک درخواست جداگانه‌ی دیگر برای
     // خواندن داده‌ها نباشیم (که کندی محسوسی ایجاد می‌کرد)، همین یک درخواست
     // هم نتیجه‌ی ورود و هم کل داده‌های داشبورد را با هم برمی‌گرداند — و شیت
     // کاربران هم فقط یک‌بار خوانده می‌شود (نه یک‌بار برای ورود و یک‌بار برای لیست).
     if (action === 'login') {
-      const loginResult = loginAndGetData(body.payload);
+      const loginResult = loginAndGetData(payload);
       return jsonResponse({ ok: true, result: loginResult.result, data: loginResult.data });
     }
     if (action === 'googleLogin') {
-      const loginResult = googleLoginAndGetData(body.payload);
+      const loginResult = googleLoginAndGetData(payload);
       return jsonResponse({ ok: true, result: loginResult.result, data: loginResult.data });
     }
+    if (action === 'logout') {
+      const token = String(payload.sessionToken || '').trim();
+      if (token) CacheService.getScriptCache().remove('session_' + token);
+      return jsonResponse({ ok: true, result: { message: 'خارج شدید' } });
+    }
 
-    // برای عملیات‌های نوشتنی، دیگر کل شیت‌ها را دوباره نمی‌خوانیم (که کند بود)؛
-    // هر تابع فقط نتیجه‌ی لازم برای به‌روزرسانی محلی در مرورگر را برمی‌گرداند.
+    // از اینجا به بعد، برای هر عملیات دیگری، هویت واقعی کاربر را از روی
+    // توکن نشست تأیید می‌کنیم — نه از روی هرچیزی که کلاینت در payload فرستاده.
+    const sessionUser = getSessionUser(payload.sessionToken);
+
+    // بسته به نوع عملیات، سطح دسترسی لازم را چک می‌کنیم و هویت واقعی کاربر
+    // را جایگزین هر ادعای احتمالی کلاینت می‌کنیم (ایمن‌سازی در یک نقطه‌ی واحد).
+    const ADMIN_ONLY = ['deleteTransaction', 'editInventory'];
+    const SUPER_ADMIN_ONLY = ['addUser', 'deleteUser', 'setUserEmail', 'resetAllData'];
+    if (ADMIN_ONLY.indexOf(action) !== -1) requireAdmin(sessionUser);
+    if (SUPER_ADMIN_ONLY.indexOf(action) !== -1) requireSuperAdmin(sessionUser);
+
+    payload.registeredBy = sessionUser.username;       // addTransaction
+    payload.adminUsername = sessionUser.username;       // editInventory
+    payload.requestingUsername = sessionUser.username;  // addUser / deleteUser / setUserEmail
+    payload.username = payload.username || sessionUser.username; // برای changePassword: همیشه فقط رمز خودتان
+    if (action === 'changePassword') payload.username = sessionUser.username; // هرگز اجازه‌ی تغییر رمز دیگران را نده
+
     let result;
     if (action === 'addTransaction') {
-      result = addTransaction(body.payload);
+      result = addTransaction(payload);
     } else if (action === 'addListItem') {
-      result = addListItem(body.payload);
+      result = addListItem(payload);
     } else if (action === 'deleteListItem') {
-      result = deleteListItem(body.payload);
+      result = deleteListItem(payload);
     } else if (action === 'addUser') {
-      result = addUser(body.payload);
+      result = addUser(payload);
     } else if (action === 'setUserEmail') {
-      result = setUserEmail(body.payload);
+      result = setUserEmail(payload);
     } else if (action === 'deleteUser') {
-      result = deleteUser(body.payload);
+      result = deleteUser(payload);
     } else if (action === 'changePassword') {
-      result = changePassword(body.payload);
+      result = changePassword(payload);
     } else if (action === 'deleteTransaction') {
-      result = deleteTransaction(body.payload);
+      result = deleteTransaction(payload);
     } else if (action === 'editInventory') {
-      result = editInventory(body.payload);
+      result = editInventory(payload);
     } else if (action === 'resetAllData') {
-      result = resetAllData(body.payload);
+      result = resetAllData(payload);
     } else {
       throw new Error('اکشن نامعتبر است');
     }
@@ -175,22 +262,32 @@ function ensureUserEmailColumn(usersSheet) {
 
 // ---------- خواندن همه‌ی داده‌ها ----------
 
+const RECENT_TX_LIMIT = 60; // برای بارگذاری سریع؛ تاریخچه‌ی کامل با اکشن جداگانه‌ی getHistory خوانده می‌شود
+
 function getAllData(preloadedUserRows) {
   setupSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // تراکنش‌ها
+  // تراکنش‌ها: فقط آخرین‌ها را می‌خوانیم (نه کل شیت) — این بزرگ‌ترین عامل کندی
+  // لاگین و بارگذاری بود، چون با هربار بزرگ‌ترشدن تاریخچه، کندتر می‌شد.
   const tx = ss.getSheetByName(SHEET_TRANSACTIONS);
-  const txValues = tx.getDataRange().getValues();
-  txValues.shift();
-  const transactions = txValues
-    .filter(row => row[0])
-    .map(row => ({
-      id: row[0], datetime: row[1], city: row[2], category: row[3],
-      itemType: row[4], color: row[5], person: row[6], registeredBy: row[7],
-      operation: row[8], quantity: Number(row[9]), balanceAfter: Number(row[10])
-    }))
-    .reverse();
+  const txLastRow = tx.getLastRow();
+  let transactions = [];
+  if (txLastRow > 1) {
+    const totalRows = txLastRow - 1;
+    const rowsToRead = Math.min(RECENT_TX_LIMIT, totalRows);
+    const startRow = txLastRow - rowsToRead + 1;
+    const txValues = tx.getRange(startRow, 1, rowsToRead, 11).getValues();
+    transactions = txValues
+      .filter(row => row[0])
+      .map(row => ({
+        id: row[0], datetime: row[1], city: row[2], category: row[3],
+        itemType: row[4], color: row[5], person: row[6], registeredBy: row[7],
+        operation: row[8], quantity: Number(row[9]), balanceAfter: Number(row[10])
+      }))
+      .reverse();
+  }
+  const totals = getRunningTotals();
 
   // موجودی
   const inv = ss.getSheetByName(SHEET_INVENTORY);
@@ -230,7 +327,28 @@ function getAllData(preloadedUserRows) {
       email: row[6] || ''
     }));
 
-  return { transactions, inventory, lists: { cities, boxTypes, colors, others }, users };
+  return {
+    transactions, inventory, lists: { cities, boxTypes, colors, others }, users, totals,
+    hasMoreHistory: txLastRow - 1 > transactions.length
+  };
+}
+
+// ---------- تاریخچه‌ی کامل (فقط وقتی کاربر واقعاً تب «تاریخچه» را باز می‌کند خوانده می‌شود) ----------
+function getHistoryData() {
+  setupSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tx = ss.getSheetByName(SHEET_TRANSACTIONS);
+  const txValues = tx.getDataRange().getValues();
+  txValues.shift();
+  const transactions = txValues
+    .filter(row => row[0])
+    .map(row => ({
+      id: row[0], datetime: row[1], city: row[2], category: row[3],
+      itemType: row[4], color: row[5], person: row[6], registeredBy: row[7],
+      operation: row[8], quantity: Number(row[9]), balanceAfter: Number(row[10])
+    }))
+    .reverse();
+  return { transactions };
 }
 
 // ---------- ورود کاربر (یک‌باره: هم احراز هویت، هم بارگذاری کامل داده‌ها) ----------
@@ -245,6 +363,15 @@ function loginAndGetData(payload) {
   const passwordHash = String(payload.passwordHash || '').trim();
   if (!username || !passwordHash) throw new Error('نام کاربری و رمز عبور الزامی است');
 
+  // محافظت در برابر حدس رمز عبور: بعد از ۵ تلاش ناموفق پشت‌سرهم برای یک
+  // نام‌کاربری، تا ۵ دقیقه اجازه‌ی تلاش دوباره داده نمی‌شود (حتی اگر رمز درست باشد)
+  const cache = CacheService.getScriptCache();
+  const failKey = 'loginfail_' + username;
+  const failCount = Number(cache.get(failKey) || 0);
+  if (failCount >= 5) {
+    throw new Error('به‌خاطر چند تلاش ناموفق پیاپی، تا چند دقیقه دیگر دوباره امتحان کنید');
+  }
+
   // شیت کاربران فقط یک‌بار خوانده می‌شود؛ هم برای احراز هویت هم برای ساخت لیست کاربران در ادامه استفاده می‌شود
   const userRows = usersSheet.getDataRange().getValues();
   userRows.shift();
@@ -254,12 +381,21 @@ function loginAndGetData(payload) {
     if (userRows[i][0] === username) {
       const active = userRows[i][4] === true || userRows[i][4] === 'true';
       if (!active) throw new Error('این حساب کاربری غیرفعال شده است');
-      if (userRows[i][1] !== passwordHash) throw new Error('نام کاربری یا رمز عبور اشتباه است');
+      if (userRows[i][1] !== passwordHash) {
+        cache.put(failKey, String(failCount + 1), 300); // ۵ دقیقه
+        throw new Error('نام کاربری یا رمز عبور اشتباه است');
+      }
       matchedUser = { username: userRows[i][0], fullName: userRows[i][2], role: userRows[i][3] };
       break;
     }
   }
-  if (!matchedUser) throw new Error('نام کاربری یا رمز عبور اشتباه است');
+  if (!matchedUser) {
+    cache.put(failKey, String(failCount + 1), 300);
+    throw new Error('نام کاربری یا رمز عبور اشتباه است');
+  }
+  cache.remove(failKey); // ورود موفق؛ شمارنده‌ی تلاش ناموفق پاک شود
+
+  matchedUser.token = createSession(matchedUser);
 
   const data = getAllData(userRows); // همان ردیف‌های کاربران را دوباره پاس می‌دهیم، بدون خواندن مجدد شیت
   return { result: matchedUser, data: data };
@@ -313,6 +449,8 @@ function googleLoginAndGetData(payload) {
   if (!matchedUser) {
     throw new Error('ایمیل گوگل شما (' + email + ') به هیچ حسابی در سامانه متصل نیست. از مدیر انبار بخواهید آن را اضافه کند.');
   }
+
+  matchedUser.token = createSession(matchedUser);
 
   const data = getAllData(userRows);
   return { result: matchedUser, data: data };
@@ -387,6 +525,7 @@ function addTransaction(payload) {
   const id = clientId || ('TX-' + now.getTime());
 
   tx.appendRow([id, dateStr, city, category, itemType, color, person, registeredBy, operation, quantity, newStock]);
+  adjustRunningTotals(operation === 'IN' ? quantity : 0, operation === 'OUT' ? quantity : 0);
 
   const result = { id, newStock, dateStr };
   if (cacheKey) cache.put(cacheKey, JSON.stringify(result), 300); // ۵ دقیقه برای پوشش تلاش‌های مجدد کافی است
@@ -602,6 +741,7 @@ function deleteTransaction(payload) {
   }
 
   tx.deleteRow(rowIndex);
+  adjustRunningTotals(operation === 'IN' ? -quantity : 0, operation === 'OUT' ? -quantity : 0);
   return { message: 'تراکنش حذف و موجودی اصلاح شد' };
 }
 
@@ -673,6 +813,8 @@ function resetAllData(payload) {
 
   const inv = ss.getSheetByName(SHEET_INVENTORY);
   if (inv.getLastRow() > 1) inv.deleteRows(2, inv.getLastRow() - 1);
+
+  resetRunningTotals();
 
   return { message: 'تاریخچه و موجودی کامل پاک شد' };
 }

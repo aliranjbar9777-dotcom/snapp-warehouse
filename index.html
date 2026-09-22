@@ -198,6 +198,9 @@
   .city-card .amount{ font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; margin-bottom:10px;}
   .bar-track{ height:6px; border-radius:6px; background:var(--surface-2); overflow:hidden; }
   .bar-fill{ height:100%; border-radius:6px; background:var(--brand); transition:width .7s cubic-bezier(.22,.9,.32,1); }
+  .city-item-list{ margin-top:10px; display:flex; flex-direction:column; gap:4px; }
+  .city-item-row{ display:flex; align-items:center; justify-content:space-between; font-size:11.8px; color:var(--ink-muted); }
+  .city-item-row b{ color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums; }
 
   /* ---------- Recent list ---------- */
   .recent-list{ display:flex; flex-direction:column; gap:2px; }
@@ -692,6 +695,10 @@
           <p>جستجو و فیلتر تمام تراکنش‌های ثبت‌شده</p>
         </div>
       </div>
+      <div id="history-loading-more" class="hidden" style="display:flex; align-items:center; gap:8px; color:var(--ink-muted); font-size:12.5px; margin-bottom:12px;">
+        <span class="loading-spin" style="border-top-color:var(--brand); border-color:rgba(0,197,108,.25);"></span>
+        در حال بارگذاری تاریخچه‌ی کامل…
+      </div>
       <div class="panel">
         <div class="filters-row">
           <input type="text" id="hf-search" placeholder="جستجو بر اساس نام شخص یا نوع تجهیز…" oninput="renderHistory()" />
@@ -878,9 +885,10 @@ let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google». تا وقتی این مقدار پر
 // نشود، دکمه‌ی ورود با گوگل نمایش داده نمی‌شود و فقط فرم نام‌کاربری/رمز کار می‌کند.
 // این مقدار باید دقیقاً با ثابت GOOGLE_CLIENT_ID در Code.gs یکی باشد.
-const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
 let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
-let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [] };
+let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [], totals: { totalIn: 0, totalOut: 0 }, hasMoreHistory: false };
+let fullHistoryLoaded = false; // آیا کل تاریخچه (نه فقط چند مورد اخیر) قبلاً بارگذاری شده؟
 let currentCategory = 'باکس';
 let currentOp = 'IN';
 let charts = {};
@@ -924,10 +932,29 @@ function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 // را اجرا کرده باشد و ارسال دوباره باعث ثبت دوبار همان تراکنش شود. فقط وقتی
 // خودِ اتصال شبکه اصلاً برقرار نشده (fetch حتی جواب نگرفته)، تلاش مجدد امن است
 // چون تقریباً مطمئنیم درخواست به سرور نرسیده.
+function isSessionError(msg){
+  return typeof msg === 'string' && msg.indexOf('نشست') !== -1;
+}
+function forceReLogin(message){
+  SESSION = null;
+  localStorage.removeItem(SESSION_KEY);
+  showLoginScreen();
+  const errEl = document.getElementById('login-error');
+  if(errEl){ errEl.textContent = message || 'نشست شما منقضی شده؛ دوباره وارد شوید.'; errEl.style.display = 'block'; }
+}
+
 async function apiCall(action, payload, options){
   options = options || {};
   const retryOnBadResponse = !!options.retryOnBadResponse;
   const maxNetworkAttempts = 3;
+
+  // برای هر درخواستی به‌جز خودِ ورود، توکن نشست را همراه می‌فرستیم تا سرور
+  // بتواند هویت واقعی کاربر را تأیید کند — بدون این، سرور اصلاً درخواست را رد می‌کند.
+  const finalPayload = Object.assign({}, payload);
+  if(action !== 'login' && action !== 'googleLogin' && SESSION && SESSION.token){
+    finalPayload.sessionToken = SESSION.token;
+  }
+
   let attempt = 0;
   while(true){
     attempt++;
@@ -936,7 +963,7 @@ async function apiCall(action, payload, options){
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
-        body: JSON.stringify({ action, payload })
+        body: JSON.stringify({ action, payload: finalPayload })
       });
       text = await res.text();
     }catch(networkErr){
@@ -948,18 +975,23 @@ async function apiCall(action, payload, options){
       if(retryOnBadResponse && attempt < maxNetworkAttempts){ await sleep(500 * attempt); continue; }
       throw new Error('پاسخ نامعتبری از سرور دریافت شد. لطفاً دوباره تلاش کنید.');
     }
-    if(!json.ok) throw new Error(json.error || 'خطا در ارتباط با سرور');
+    if(!json.ok){
+      if(isSessionError(json.error)) forceReLogin(json.error);
+      throw new Error(json.error || 'خطا در ارتباط با سرور');
+    }
     return json;
   }
 }
-async function apiGet(){
+async function apiGet(action){
+  action = action || 'getData';
   let attempt = 0;
   const maxAttempts = 3;
+  const tokenParam = (SESSION && SESSION.token) ? ('&token=' + encodeURIComponent(SESSION.token)) : '';
   while(true){
     attempt++;
     let text;
     try{
-      const res = await fetch(API_URL + '?action=getData');
+      const res = await fetch(API_URL + '?action=' + action + tokenParam);
       text = await res.text();
     }catch(networkErr){
       if(attempt < maxAttempts){ await sleep(500 * attempt); continue; }
@@ -967,10 +999,13 @@ async function apiGet(){
     }
     const json = safeParseJson(text);
     if(!json){
-      if(attempt < maxAttempts){ await sleep(500 * attempt); continue; } // getData فقط‌خواندنی است، retry همیشه امن است
+      if(attempt < maxAttempts){ await sleep(500 * attempt); continue; } // فقط‌خواندنی است، retry همیشه امن است
       throw new Error('پاسخ نامعتبری از سرور دریافت شد. لطفاً دوباره تلاش کنید.');
     }
-    if(!json.ok) throw new Error(json.error || 'خطا در دریافت اطلاعات');
+    if(!json.ok){
+      if(isSessionError(json.error)) forceReLogin(json.error);
+      throw new Error(json.error || 'خطا در دریافت اطلاعات');
+    }
     return json.data;
   }
 }
@@ -983,6 +1018,7 @@ async function apiPost(action, payload, options){
 
 async function fetchData(){
   DATA = await apiGet();
+  fullHistoryLoaded = false;
   document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
   renderAll();
 }
@@ -1032,6 +1068,7 @@ async function handleGoogleCredential(response){
     );
     SESSION = json.result;
     DATA = json.data;
+    fullHistoryLoaded = false;
     localStorage.setItem(SESSION_KEY, JSON.stringify(SESSION));
     document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
     renderAll();
@@ -1064,6 +1101,7 @@ async function doLogin(){
     );
     SESSION = json.result;
     DATA = json.data;
+    fullHistoryLoaded = false;
     localStorage.setItem(SESSION_KEY, JSON.stringify(SESSION));
     document.getElementById('login-password').value = '';
     document.getElementById('dash-updated').textContent = 'به‌روزرسانی شده: ' + new Date().toLocaleTimeString('fa-IR');
@@ -1079,6 +1117,10 @@ async function doLogin(){
   }
 }
 function logout(){
+  // ابطال توکن روی سرور هم انجام می‌شود تا اگر این توکن جایی افشا شده باشد، دیگر کار نکند
+  if(SESSION && SESSION.token){
+    apiCall('logout', {}, { retryOnBadResponse: false }).catch(()=>{});
+  }
   SESSION = null;
   localStorage.removeItem(SESSION_KEY);
   location.reload();
@@ -1173,10 +1215,30 @@ function switchView(name){
   document.querySelectorAll('.nav-item').forEach(b=> b.classList.toggle('active', b.dataset.view===name));
   document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
-  if(name==='history') renderHistory();
+  if(name==='history') loadHistoryIfNeeded();
   if(name==='by-city') renderByCity();
   if(name==='by-type') renderByType();
   if(name==='settings') renderSettings();
+}
+
+// در ورود/بارگذاری اولیه فقط آخرین چند ده تراکنش می‌آید (برای سرعت). تاریخچه‌ی
+// کامل فقط همین‌جا و فقط یک‌بار در هر نشست، وقتی واقعاً به این تب سر می‌زنید خوانده می‌شود.
+async function loadHistoryIfNeeded(){
+  renderHistory(); // همان مقدار فعلی (اخیر) را فوراً نشان بده، بدون معطلی
+  if(fullHistoryLoaded || !DATA.hasMoreHistory) return;
+  const loadingEl = document.getElementById('history-loading-more');
+  loadingEl.classList.remove('hidden');
+  try{
+    const historyData = await apiGet('getHistory');
+    DATA.transactions = historyData.transactions;
+    fullHistoryLoaded = true;
+    renderHistory();
+    renderDashRecent(); // اگر برگردی به نمای کلی، «آخرین تراکنش‌ها» هم از همین لیست کامل‌شده استفاده کند
+  }catch(err){
+    toast('بارگذاری تاریخچه‌ی کامل ناموفق بود: ' + err.message, true);
+  }finally{
+    loadingEl.classList.add('hidden');
+  }
 }
 
 /* ============================================================
@@ -1189,20 +1251,23 @@ function cityTotals(){
   return map;
 }
 function productTotals(){
-  const map = {};
-  DATA.inventory.forEach(r=>{ map[r.itemType] = (map[r.itemType]||0) + Number(r.stock||0); });
+  const map = {}; // itemType -> {total, category}
+  DATA.inventory.forEach(r=>{
+    if(!map[r.itemType]) map[r.itemType] = { total: 0, category: r.category };
+    map[r.itemType].total += Number(r.stock||0);
+  });
   return map;
 }
 function genericCardsHtml(totalsMap, limit){
-  let entries = Object.entries(totalsMap).sort((a,b)=>b[1]-a[1]);
+  let entries = Object.entries(totalsMap).sort((a,b)=>b[1].total-a[1].total);
   if(limit) entries = entries.slice(0, limit);
-  const max = Math.max(1, ...entries.map(e=>e[1]));
+  const max = Math.max(1, ...entries.map(e=>e[1].total));
   if(entries.length===0) return '<div class="empty-state">هنوز موجودی‌ای ثبت نشده است.</div>';
-  return entries.map(([label, total], i)=>{
-    const pct = Math.round((total/max)*100);
+  return entries.map(([label, v], i)=>{
+    const pct = Math.round((v.total/max)*100);
     return `<div class="city-card" style="animation-delay:${i*35}ms">
-      <div class="name">${label}</div>
-      <div class="amount">${toEnNum(total)}</div>
+      <div class="name">${itemIcon(v.category)} ${label}</div>
+      <div class="amount">${toEnNum(v.total)}</div>
       <div class="bar-track"><div class="bar-fill" data-target="${pct}" style="width:0%"></div></div>
     </div>`;
   }).join('');
@@ -1267,8 +1332,8 @@ function renderAll(){
 function renderStats(){
   const totals = cityTotals();
   const totalStock = Object.values(totals).reduce((a,b)=>a+b,0);
-  const totalIn = DATA.transactions.filter(t=>t.operation==='IN').reduce((a,t)=>a+Number(t.quantity),0);
-  const totalOut = DATA.transactions.filter(t=>t.operation==='OUT').reduce((a,t)=>a+Number(t.quantity),0);
+  const totalIn = (DATA.totals && DATA.totals.totalIn) || 0;
+  const totalOut = (DATA.totals && DATA.totals.totalOut) || 0;
   const activeCities = Object.keys(totals).filter(c=>totals[c]>0).length;
   animateNumber('stat-total', totalStock);
   animateNumber('stat-in', totalIn);
@@ -1297,6 +1362,18 @@ function animateNumber(elId, target){
   requestAnimationFrame(tick);
 }
 
+function itemIcon(category){ return category === 'باکس' ? '📦' : '🧰'; }
+function cityItemBreakdown(city){
+  const map = {}; // itemType -> {total, category}
+  DATA.inventory.forEach(r=>{
+    if(r.city !== city) return;
+    if(!map[r.itemType]) map[r.itemType] = { total: 0, category: r.category };
+    map[r.itemType].total += Number(r.stock||0);
+  });
+  return Object.entries(map)
+    .map(([itemType, v])=>({ itemType, total: v.total, category: v.category }))
+    .sort((a,b)=> b.total - a.total);
+}
 function cityCardsHtml(limit){
   const totals = cityTotals();
   let entries = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
@@ -1307,10 +1384,15 @@ function cityCardsHtml(limit){
   }
   return entries.map(([city, total], i)=>{
     const pct = Math.round((total/max)*100);
+    const items = cityItemBreakdown(city);
+    const itemsHtml = items.map(it=>
+      `<div class="city-item-row"><span>${itemIcon(it.category)} ${it.itemType}</span><b>${toEnNum(it.total)}</b></div>`
+    ).join('');
     return `<div class="city-card" style="animation-delay:${i*35}ms">
       <div class="name">${city}</div>
       <div class="amount">${toEnNum(total)}</div>
       <div class="bar-track"><div class="bar-fill" data-target="${pct}" style="width:0%"></div></div>
+      <div class="city-item-list">${itemsHtml}</div>
     </div>`;
   }).join('');
 }
@@ -1541,7 +1623,18 @@ function updateStockPreview(){
 }
 
 function resetForm(){
+  // ریست کامل فرم (به‌جز شهر، چون معمولاً کارشناس چند قلم را پشت‌سرهم برای همان شهر ثبت می‌کند)
+  currentCategory = 'باکس';
+  document.querySelectorAll('#cat-toggle button').forEach(x=> x.classList.toggle('active', x.dataset.cat==='باکس'));
+  currentOp = 'IN';
+  document.querySelectorAll('#op-toggle button').forEach(x=> x.classList.toggle('active', x.dataset.op==='IN'));
+
+  document.getElementById('f-itemtype-label').textContent = 'نوع باکس';
+  document.getElementById('f-itemtype').innerHTML = (DATA.lists.boxTypes||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+  document.getElementById('f-color-label').textContent = 'رنگ باکس';
+  document.getElementById('f-color').innerHTML = (DATA.lists.colors||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
   document.getElementById('f-qty').value = '';
+  updateColorSwatch();
   updateStockPreview();
 }
 
@@ -1593,9 +1686,12 @@ async function submitTransaction(){
     if(invRow){ invRow.stock = r.newStock; }
     else { DATA.inventory.push({ city, category: currentCategory, itemType, color, stock: r.newStock }); }
 
+    if(!DATA.totals) DATA.totals = { totalIn: 0, totalOut: 0 };
+    if(currentOp==='IN') DATA.totals.totalIn += qty; else DATA.totals.totalOut += qty;
+
     renderAll();
     toast(`تراکنش ثبت شد — موجودی جدید: ${toEnNum(r.newStock)}`, false);
-    document.getElementById('f-qty').value = '';
+    resetForm();
   }catch(err){
     toast(err.message, true);
   }finally{
@@ -1729,6 +1825,9 @@ async function resetAllData(){
     await apiPost('resetAllData', { adminUsername: SESSION ? SESSION.username : '' });
     DATA.transactions = [];
     DATA.inventory = [];
+    DATA.totals = { totalIn: 0, totalOut: 0 };
+    DATA.hasMoreHistory = false;
+    fullHistoryLoaded = false;
     renderAll();
     toast('تاریخچه و موجودی کامل پاک شد', false);
   }catch(err){ toast(err.message, true); }
@@ -1750,6 +1849,10 @@ async function deleteTransactionRow(id){
       const invRow = DATA.inventory.find(x => x.city===t.city && x.category===t.category && x.itemType===t.itemType && (x.color||'')===(t.color||''));
       if(invRow){
         invRow.stock = t.operation==='IN' ? Math.max(0, invRow.stock - t.quantity) : (invRow.stock + t.quantity);
+      }
+      if(DATA.totals){
+        if(t.operation==='IN') DATA.totals.totalIn = Math.max(0, DATA.totals.totalIn - t.quantity);
+        else DATA.totals.totalOut = Math.max(0, DATA.totals.totalOut - t.quantity);
       }
     }
     DATA.transactions = DATA.transactions.filter(x => x.id !== id);
