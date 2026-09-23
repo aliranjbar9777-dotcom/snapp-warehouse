@@ -885,7 +885,7 @@ let API_URL = localStorage.getItem(STORAGE_KEY) || DEFAULT_API_URL || '';
 // Client ID پروژه‌ی Google Cloud برای «ورود با Google». تا وقتی این مقدار پر
 // نشود، دکمه‌ی ورود با گوگل نمایش داده نمی‌شود و فقط فرم نام‌کاربری/رمز کار می‌کند.
 // این مقدار باید دقیقاً با ثابت GOOGLE_CLIENT_ID در Code.gs یکی باشد.
-const GOOGLE_CLIENT_ID = 'PASTE_YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '696256593285-pkemhcpv7feiqlchpjgschjiehk6j6q5.apps.googleusercontent.com';
 let SESSION = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); // {username, fullName, role}
 let DATA = { transactions: [], inventory: [], lists: { cities: [], boxTypes: [], colors: [], others: [] }, users: [], totals: { totalIn: 0, totalOut: 0 }, hasMoreHistory: false };
 let fullHistoryLoaded = false; // آیا کل تاریخچه (نه فقط چند مورد اخیر) قبلاً بارگذاری شده؟
