@@ -533,10 +533,6 @@
           <div class="role" id="user-role">—</div>
         </div>
       </div>
-      <button onclick="openSetupModal(true)" id="sidebar-connect-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-        اتصال Google Sheets
-      </button>
       <button onclick="logout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
         خروج از حساب
@@ -1139,7 +1135,6 @@ function applyRoleUI(){
   const welcomeEl = document.getElementById('dash-welcome');
   if(welcomeEl) welcomeEl.textContent = SESSION ? ('سلام ' + SESSION.fullName + ' 👋 ·') : '';
   document.getElementById('nav-settings').style.display = admin ? '' : 'none';
-  document.getElementById('sidebar-connect-btn').style.display = admin ? '' : 'none';
   document.getElementById('settings-admin-area').classList.toggle('hidden', !admin);
   document.getElementById('settings-admin-locked').classList.toggle('hidden', admin);
 
