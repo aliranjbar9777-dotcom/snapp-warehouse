@@ -191,6 +191,18 @@ function jsonResponse(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// برای مقایسه‌ی رشته‌های فارسی: چون کاراکترهای عربی «ي»/«ك» و فارسی «ی»/«ک»
+// ظاهراً یکسان دیده می‌شوند ولی کد یونیکد متفاوتی دارند، بدون این نرمال‌سازی
+// ممکن است دو مقدار که چشم آن‌ها را یکی می‌بیند، در مقایسه‌ی دقیق برابر نشوند
+// (مثلاً موجودی درست ثبت‌شده ولی موقع ثبت تراکنش بعدی، ردیفش پیدا نشود).
+function normKey(s) {
+  return String(s || '')
+    .trim()
+    .replace(/\u064A/g, '\u06CC') // ي عربی → ی فارسی
+    .replace(/\u0643/g, '\u06A9') // ك عربی → ک فارسی
+    .replace(/\s+/g, ' ');
+}
+
 // ---------- ساخت اولیه‌ی شیت‌ها ----------
 
 function setupSheets() {
@@ -495,8 +507,8 @@ function addTransaction(payload) {
   const invData = inv.getDataRange().getValues();
   let rowIndex = -1;
   for (let i = 1; i < invData.length; i++) {
-    if (invData[i][0] === city && invData[i][1] === category &&
-        invData[i][2] === itemType && invData[i][3] === color) {
+    if (normKey(invData[i][0]) === normKey(city) && normKey(invData[i][1]) === normKey(category) &&
+        normKey(invData[i][2]) === normKey(itemType) && normKey(invData[i][3]) === normKey(color)) {
       rowIndex = i + 1; // شماره ردیف در شیت (۱-پایه)
       break;
     }
@@ -730,7 +742,8 @@ function deleteTransaction(payload) {
   if (operation === 'IN' || operation === 'OUT') {
     const invData = inv.getDataRange().getValues();
     for (let i = 1; i < invData.length; i++) {
-      if (invData[i][0] === city && invData[i][1] === category && invData[i][2] === itemType && invData[i][3] === color) {
+      if (normKey(invData[i][0]) === normKey(city) && normKey(invData[i][1]) === normKey(category) &&
+          normKey(invData[i][2]) === normKey(itemType) && normKey(invData[i][3]) === normKey(color)) {
         let stock = Number(invData[i][4]) || 0;
         stock = (operation === 'IN') ? (stock - quantity) : (stock + quantity);
         if (stock < 0) stock = 0;
@@ -767,7 +780,8 @@ function editInventory(payload) {
   const data = inv.getDataRange().getValues();
   let rowIndex = -1, oldStock = 0;
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === city && data[i][1] === category && data[i][2] === itemType && data[i][3] === color) {
+    if (normKey(data[i][0]) === normKey(city) && normKey(data[i][1]) === normKey(category) &&
+        normKey(data[i][2]) === normKey(itemType) && normKey(data[i][3]) === normKey(color)) {
       rowIndex = i + 1; oldStock = Number(data[i][4]) || 0; break;
     }
   }

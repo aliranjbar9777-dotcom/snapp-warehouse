@@ -1245,18 +1245,33 @@ async function loadHistoryIfNeeded(){
    HELPERS
    ============================================================ */
 function toEnNum(n){ return Number(n||0).toLocaleString('en-US'); }
+// برای مقایسه‌ی رشته‌های فارسی: حروف عربی «ي»/«ك» را به معادل فارسی «ی»/«ک»
+// تبدیل می‌کند تا مقایسه‌ی دو مقداری که چشم یکسان می‌بیند، همیشه درست کار کند
+// (همان مشکلی که باعث می‌شد موجودی فعلی صفر نمایش داده شود و ثبت را ببندد).
+function normKey(s){
+  return String(s||'').trim().replace(/\u064A/g,'\u06CC').replace(/\u0643/g,'\u06A9').replace(/\s+/g,' ');
+}
 function cityTotals(){
-  const map = {};
-  DATA.inventory.forEach(r=>{ map[r.city] = (map[r.city]||0) + Number(r.stock||0); });
-  return map;
+  const map = {}; // normalizedKey -> { label, total }
+  DATA.inventory.forEach(r=>{
+    const key = normKey(r.city);
+    if(!map[key]) map[key] = { label: r.city, total: 0 };
+    map[key].total += Number(r.stock||0);
+  });
+  const out = {};
+  Object.values(map).forEach(v=>{ out[v.label] = v.total; });
+  return out;
 }
 function productTotals(){
-  const map = {}; // itemType -> {total, category}
+  const map = {}; // normalizedKey -> { label, total, category }
   DATA.inventory.forEach(r=>{
-    if(!map[r.itemType]) map[r.itemType] = { total: 0, category: r.category };
-    map[r.itemType].total += Number(r.stock||0);
+    const key = normKey(r.itemType);
+    if(!map[key]) map[key] = { label: r.itemType, total: 0, category: r.category };
+    map[key].total += Number(r.stock||0);
   });
-  return map;
+  const out = {};
+  Object.values(map).forEach(v=>{ out[v.label] = { total: v.total, category: v.category }; });
+  return out;
 }
 function genericCardsHtml(totalsMap, limit){
   let entries = Object.entries(totalsMap).sort((a,b)=>b[1].total-a[1].total);
@@ -1364,14 +1379,15 @@ function animateNumber(elId, target){
 
 function itemIcon(category){ return category === 'باکس' ? '📦' : '🧰'; }
 function cityItemBreakdown(city){
-  const map = {}; // itemType -> {total, category}
+  const map = {}; // normalizedKey -> { label, total, category }
   DATA.inventory.forEach(r=>{
-    if(r.city !== city) return;
-    if(!map[r.itemType]) map[r.itemType] = { total: 0, category: r.category };
-    map[r.itemType].total += Number(r.stock||0);
+    if(normKey(r.city) !== normKey(city)) return;
+    const key = normKey(r.itemType);
+    if(!map[key]) map[key] = { label: r.itemType, total: 0, category: r.category };
+    map[key].total += Number(r.stock||0);
   });
-  return Object.entries(map)
-    .map(([itemType, v])=>({ itemType, total: v.total, category: v.category }))
+  return Object.values(map)
+    .map(v=>({ itemType: v.label, total: v.total, category: v.category }))
     .sort((a,b)=> b.total - a.total);
 }
 function cityCardsHtml(limit){
@@ -1481,7 +1497,7 @@ function renderHistory(){
   const cat = document.getElementById('hf-cat').value;
 
   let rows = DATA.transactions.filter(t=>{
-    if(city && t.city!==city) return false;
+    if(city && normKey(t.city)!==normKey(city)) return false;
     if(op && t.operation!==op) return false;
     if(cat && t.category!==cat) return false;
     if(search && !(String(t.person).toLowerCase().includes(search) || String(t.itemType).toLowerCase().includes(search))) return false;
@@ -1512,7 +1528,7 @@ function renderByType(){
   const city = document.getElementById('tf-city').value;
 
   let rows = DATA.inventory.filter(r=>{
-    if(city && r.city!==city) return false;
+    if(city && normKey(r.city)!==normKey(city)) return false;
     if(search && !String(r.itemType).toLowerCase().includes(search)) return false;
     return true;
   }).sort((a,b)=> b.stock - a.stock);
@@ -1617,7 +1633,7 @@ function updateStockPreview(){
   const city = document.getElementById('f-city').value;
   const itemType = document.getElementById('f-itemtype').value;
   const color = document.getElementById('f-color').value;
-  const row = DATA.inventory.find(r=> r.city===city && r.category===currentCategory && r.itemType===itemType && (r.color||'')===(color||''));
+  const row = DATA.inventory.find(r=> normKey(r.city)===normKey(city) && normKey(r.category)===normKey(currentCategory) && normKey(r.itemType)===normKey(itemType) && normKey(r.color)===normKey(color));
   document.getElementById('stock-preview-val').textContent = row ? toEnNum(row.stock) + ' تعداد' : '۰ تعداد';
   updateColorSwatch();
 }
@@ -1682,7 +1698,7 @@ async function submitTransaction(){
       person: payload.person, registeredBy: payload.registeredBy, operation: currentOp,
       quantity: qty, balanceAfter: r.newStock
     });
-    const invRow = DATA.inventory.find(x => x.city===city && x.category===currentCategory && x.itemType===itemType && (x.color||'')===(color||''));
+    const invRow = DATA.inventory.find(x => normKey(x.city)===normKey(city) && normKey(x.category)===normKey(currentCategory) && normKey(x.itemType)===normKey(itemType) && normKey(x.color)===normKey(color));
     if(invRow){ invRow.stock = r.newStock; }
     else { DATA.inventory.push({ city, category: currentCategory, itemType, color, stock: r.newStock }); }
 
@@ -1846,7 +1862,7 @@ async function deleteTransactionRow(id){
     await apiPost('deleteTransaction', { id });
     // موجودی محلی را دقیقاً مثل سمت سرور برعکس می‌کنیم (بدون نیاز به خواندن دوباره‌ی کل شیت)
     if(t.operation === 'IN' || t.operation === 'OUT'){
-      const invRow = DATA.inventory.find(x => x.city===t.city && x.category===t.category && x.itemType===t.itemType && (x.color||'')===(t.color||''));
+      const invRow = DATA.inventory.find(x => normKey(x.city)===normKey(t.city) && normKey(x.category)===normKey(t.category) && normKey(x.itemType)===normKey(t.itemType) && normKey(x.color)===normKey(t.color));
       if(invRow){
         invRow.stock = t.operation==='IN' ? Math.max(0, invRow.stock - t.quantity) : (invRow.stock + t.quantity);
       }
@@ -1888,7 +1904,7 @@ async function submitEditStock(){
   try{
     await apiPost('editInventory', { city, category, itemType, color, newStock, adminUsername: SESSION ? SESSION.username : '' });
 
-    const invRow = DATA.inventory.find(x => x.city===city && x.category===category && x.itemType===itemType && (x.color||'')===(color||''));
+    const invRow = DATA.inventory.find(x => normKey(x.city)===normKey(city) && normKey(x.category)===normKey(category) && normKey(x.itemType)===normKey(itemType) && normKey(x.color)===normKey(color));
     if(invRow) invRow.stock = newStock; else DATA.inventory.push({ city, category, itemType, color, stock:newStock });
 
     const delta = newStock - currentStock;
