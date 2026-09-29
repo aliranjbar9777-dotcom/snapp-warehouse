@@ -1026,6 +1026,7 @@ function showLoginScreen(){
   document.getElementById('boot-loading')?.classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app-shell').classList.add('hidden');
+  stopAutoRefresh();
   initGoogleSignIn();
 }
 function showApp(){
@@ -1033,7 +1034,49 @@ function showApp(){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app-shell').classList.remove('hidden');
   applyRoleUI();
+  startAutoRefresh();
 }
+
+/* ============================================================
+   به‌روزرسانی خودکار: هر چند ثانیه یک‌بار بی‌صدا داده‌های تازه می‌آورد تا
+   اگر یک کارشناس دیگر همین الان تراکنشی ثبت کرد، بقیه هم خودکار ببینند —
+   بدون نیاز به رفرش دستی صفحه.
+   ============================================================ */
+let autoRefreshTimer = null;
+const AUTO_REFRESH_MS = 25000; // هر ۲۵ ثانیه
+
+function startAutoRefresh(){
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(silentAutoRefresh, AUTO_REFRESH_MS);
+}
+function stopAutoRefresh(){
+  if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+async function silentAutoRefresh(){
+  if(!SESSION) return;
+  if(document.getElementById('app-shell').classList.contains('hidden')) return; // فعلاً روی صفحه‌ی ورود هستیم
+  try{
+    const fresh = await apiGet('getData');
+    DATA = fresh;
+    renderAll();
+    document.getElementById('dash-updated').textContent = 'به‌روزرسانی خودکار: ' + new Date().toLocaleTimeString('fa-IR');
+    // اگر تاریخچه‌ی کامل قبلاً بارگذاری شده بود، دوباره کاملش کن تا خالی نماند
+    if(fullHistoryLoaded){
+      fullHistoryLoaded = false;
+      if(document.getElementById('view-history').classList.contains('active')) loadHistoryIfNeeded();
+    }
+  }catch(err){
+    // ناموفق‌بودن یک رفرش خودکار نباید مزاحم کاربر شود؛ فقط بی‌صدا رد می‌شویم
+    // (به‌جز خطای نشست منقضی‌شده که apiGet خودش کاربر را به صفحه‌ی ورود برمی‌گرداند)
+  }
+}
+// اگر تب مرورگر مدتی در پس‌زمینه بوده و کاربر دوباره برگشته، بلافاصله یک‌بار
+// تازه‌سازی کن تا معطل تایمر بعدی نماند
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && SESSION && !document.getElementById('app-shell').classList.contains('hidden')){
+    silentAutoRefresh();
+  }
+});
 
 /* ============================================================
    ورود با Google (اختیاری — فقط اگر GOOGLE_CLIENT_ID تنظیم شده باشد)
