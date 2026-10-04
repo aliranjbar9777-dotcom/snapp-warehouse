@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>انبار اسنپ | داشبورد ورود و خروج تجهیزات</title>
+<script>
+  // قبل از رندر صفحه اجرا می‌شود تا یک لحظه فلاش روشن قبل از تاریک دیده نشود
+  (function(){
+    try{
+      var saved = localStorage.getItem('snapp_warehouse_theme');
+      if(saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    }catch(e){}
+  })();
+</script>
 <meta name="theme-color" content="#00C56C">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
@@ -36,9 +45,32 @@
     --radius-lg:18px;
     --radius-md:12px;
     --radius-sm:8px;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"]{
+    --bg:#14181A;
+    --surface:#1C2124;
+    --surface-2:#242B2E;
+    --ink:#EDF2EF;
+    --ink-muted:#9BA6A1;
+    --ink-faint:#6C7874;
+    --line:#2E3639;
+    --brand:#17D27E;
+    --brand-dark:#1FE08A;
+    --brand-darker:#3BE89C;
+    --brand-tint:#14302280;
+    --in:#17D27E;
+    --in-tint:#14302280;
+    --out:#E08A3F;
+    --out-tint:#3A2A1880;
+    --danger:#E05B4D;
+    --shadow: 0 1px 2px rgba(0,0,0,.35);
+    color-scheme: dark;
   }
   *{box-sizing:border-box;}
+  html{ --text-scale: 1; }
   html,body{height:100%;}
+  body{ zoom: var(--text-scale); }
   body{
     margin:0;
     font-family:'Vazirmatn', sans-serif;
@@ -121,6 +153,16 @@
   }
   .sidebar-foot button:hover{ background:var(--surface-2); }
   .sidebar-foot svg{width:15px;height:15px;}
+  .util-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:4px; }
+  .util-btn{
+    border:1px solid var(--line); background:var(--surface); color:var(--ink-muted);
+    border-radius:8px; width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:11px; font-weight:800; padding:0; flex:none;
+  }
+  .util-btn:hover{ background:var(--surface-2); color:var(--ink); }
+  .util-btn svg{ width:15px; height:15px; }
+  .font-size-group{ display:flex; gap:4px; }
+  .font-size-group .util-btn.active{ border-color:var(--brand); color:var(--brand-darker); background:var(--brand-tint); }
 
   /* ---------- Main ---------- */
   .main{ flex:1; min-width:0; padding:26px 30px 60px; }
@@ -130,6 +172,12 @@
   }
   .topbar h1{ margin:0 0 4px; font-size:21px; font-weight:800; }
   .topbar p{ margin:0; color:var(--ink-muted); font-size:13px; }
+  #live-update-badge{
+    display:inline-flex; align-items:center; gap:4px; margin-inline-start:8px; padding:2px 9px;
+    border-radius:100px; background:var(--in-tint); color:var(--in); font-size:11.5px; font-weight:700;
+    cursor:pointer; animation: pulseBadge 1.6s ease infinite;
+  }
+  @keyframes pulseBadge{ 0%,100%{ opacity:1; } 50%{ opacity:.55; } }
   .btn{
     display:inline-flex; align-items:center; gap:8px;
     padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:700;
@@ -140,7 +188,7 @@
   .btn-brand:hover{ background:var(--brand-dark); }
   .btn-ghost{ background:var(--surface); border-color:var(--line); color:var(--ink); }
   .btn-ghost:hover{ background:var(--surface-2); }
-  .btn-danger-ghost{ background:#fff; border-color:#F1D6D0; color:var(--danger); }
+  .btn-danger-ghost{ background:var(--surface); border-color:#F1D6D0; color:var(--danger); }
   .btn-danger-ghost:hover{ background:#FBEDEA; }
   .btn:disabled{ opacity:.6; cursor:default; }
 
@@ -235,7 +283,7 @@
     padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
     font-size:13.5px; color:var(--ink); outline:none; transition:border-color .15s, background .15s;
   }
-  .field select:focus, .field input:focus{ border-color:var(--brand); background:#fff; }
+  .field select:focus, .field input:focus{ border-color:var(--brand); background:var(--surface); }
   .op-toggle{ display:flex; gap:8px; }
   .op-toggle button{
     flex:1; padding:11px 10px; border-radius:10px; border:1.5px solid var(--line);
@@ -268,6 +316,9 @@
     font-size:12.8px; color:var(--ink); outline:none;
   }
   .filters-row input[type="text"]{ min-width:200px; flex:1; }
+  .date-range-group{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-muted); }
+  .date-range-group input[type="date"]{ padding:9px 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-size:12.5px; }
+  .date-range-group .btn{ padding:9px 12px; font-size:14px; line-height:1; }
   table{ width:100%; border-collapse:collapse; font-size:12.8px; }
   thead th{
     text-align:right; font-weight:700; color:var(--ink-muted); font-size:11.5px;
@@ -332,7 +383,7 @@
     z-index:300; padding:20px;
   }
   .modal{
-    background:#fff; border-radius:var(--radius-lg); padding:26px; width:100%; max-width:460px;
+    background:var(--surface); border-radius:var(--radius-lg); padding:26px; width:100%; max-width:460px;
     box-shadow:0 30px 60px -20px rgba(0,0,0,.35);
   }
   .modal h2{ margin:0 0 8px; font-size:17px; font-weight:800; }
@@ -352,7 +403,7 @@
   /* ---------- Login screen ---------- */
   .login-screen{
     position:fixed; inset:0; z-index:250; display:flex; align-items:center; justify-content:center;
-    background:radial-gradient(120% 120% at 20% 10%, #E3FAEE 0%, var(--bg) 55%); padding:20px;
+    background:radial-gradient(120% 120% at 20% 10%, var(--brand-tint) 0%, var(--bg) 55%); padding:20px;
   }
   .login-card{
     width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
@@ -372,7 +423,7 @@
     width:100%; padding:12px 13px; border-radius:11px; border:1.5px solid var(--line); background:var(--bg);
     font-size:14px; outline:none;
   }
-  .login-field input:focus{ border-color:var(--brand); background:#fff; }
+  .login-field input:focus{ border-color:var(--brand); background:var(--surface); }
   .login-error{
     background:#FBEDEA; color:var(--danger); font-size:12.3px; padding:10px 12px; border-radius:9px; margin-bottom:14px; display:none;
   }
@@ -526,6 +577,17 @@
     </nav>
 
     <div class="sidebar-foot">
+      <div class="util-row">
+        <button class="util-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="حالت شب/روز">
+          <svg id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
+          <svg id="theme-icon-light" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        </button>
+        <div class="font-size-group">
+          <button class="util-btn" onclick="setFontScale('small')" title="متن کوچک">A-</button>
+          <button class="util-btn" onclick="setFontScale('normal')" title="متن معمولی">A</button>
+          <button class="util-btn" onclick="setFontScale('large')" title="متن بزرگ">A+</button>
+        </div>
+      </div>
       <div class="user-chip">
         <div class="user-avatar" id="user-avatar">؟</div>
         <div class="user-meta">
@@ -547,7 +609,9 @@
       <div class="topbar">
         <div>
           <h1>نمای کلی انبار</h1>
-          <p><span id="dash-welcome"></span> <span id="dash-updated">در حال بارگذاری اطلاعات از Google Sheets…</span></p>
+          <p><span id="dash-welcome"></span> <span id="dash-updated">در حال بارگذاری اطلاعات از Google Sheets…</span>
+            <span id="live-update-badge" class="hidden" onclick="dismissLiveBadge()" title="موارد جدید از ثبت دیگران — برای مشاهده کلیک کنید">🟢 جدید</span>
+          </p>
         </div>
         <button class="btn btn-brand" onclick="switchView('entry')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -709,6 +773,12 @@
             <option value="باکس">فقط باکس</option>
             <option value="سایر تجهیزات">فقط سایر تجهیزات</option>
           </select>
+          <div class="date-range-group">
+            <input type="date" id="hf-date-from" onchange="renderHistory()" title="از تاریخ" />
+            <span>تا</span>
+            <input type="date" id="hf-date-to" onchange="renderHistory()" title="تا تاریخ" />
+            <button class="btn btn-ghost" type="button" onclick="clearDateRange()" title="پاک کردن بازه">×</button>
+          </div>
         </div>
         <div style="overflow-x:auto;">
           <table>
@@ -1052,14 +1122,23 @@ function startAutoRefresh(){
 function stopAutoRefresh(){
   if(autoRefreshTimer){ clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
 }
+let lastKnownTopTxId = null; // برای تشخیص اینکه آیا از آخرین رفرش، تراکنش جدیدی (احتمالاً از یک کارشناس دیگر) اضافه شده
 async function silentAutoRefresh(){
   if(!SESSION) return;
   if(document.getElementById('app-shell').classList.contains('hidden')) return; // فعلاً روی صفحه‌ی ورود هستیم
   try{
+    const prevTopId = DATA.transactions && DATA.transactions[0] ? DATA.transactions[0].id : null;
     const fresh = await apiGet('getData');
     DATA = fresh;
     renderAll();
     document.getElementById('dash-updated').textContent = 'به‌روزرسانی خودکار: ' + new Date().toLocaleTimeString('fa-IR');
+
+    const newTopId = DATA.transactions && DATA.transactions[0] ? DATA.transactions[0].id : null;
+    if(lastKnownTopTxId !== null && newTopId && newTopId !== prevTopId){
+      showLiveBadge();
+    }
+    lastKnownTopTxId = newTopId;
+
     // اگر تاریخچه‌ی کامل قبلاً بارگذاری شده بود، دوباره کاملش کن تا خالی نماند
     if(fullHistoryLoaded){
       fullHistoryLoaded = false;
@@ -1069,6 +1148,13 @@ async function silentAutoRefresh(){
     // ناموفق‌بودن یک رفرش خودکار نباید مزاحم کاربر شود؛ فقط بی‌صدا رد می‌شویم
     // (به‌جز خطای نشست منقضی‌شده که apiGet خودش کاربر را به صفحه‌ی ورود برمی‌گرداند)
   }
+}
+function showLiveBadge(){
+  document.getElementById('live-update-badge')?.classList.remove('hidden');
+}
+function dismissLiveBadge(){
+  document.getElementById('live-update-badge')?.classList.add('hidden');
+  switchView('dashboard'); // کاربر را به همان‌جا که موارد جدید نشان داده می‌شود ببر
 }
 // اگر تب مرورگر مدتی در پس‌زمینه بوده و کاربر دوباره برگشته، بلافاصله یک‌بار
 // تازه‌سازی کن تا معطل تایمر بعدی نماند
@@ -1509,15 +1595,26 @@ function drawChart(canvasId, type, labels, datasets){
   const ctx = document.getElementById(canvasId);
   if(!ctx) return;
   if(charts[canvasId]) charts[canvasId].destroy();
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const textColor = isDark ? '#9BA6A1' : '#5E6B60';
+  const gridColor = isDark ? '#2E3639' : '#E0E6DD';
   charts[canvasId] = new Chart(ctx, {
     type,
     data:{ labels, datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display: type==='doughnut', position:'bottom', labels:{ font:{family:'Vazirmatn'}, boxWidth:10 } } },
-      scales: type==='bar' ? { y:{ beginAtZero:true, ticks:{font:{family:'Vazirmatn'}} }, x:{ ticks:{font:{family:'Vazirmatn'}} } } : {}
+      plugins:{ legend:{ display: type==='doughnut', position:'bottom', labels:{ font:{family:'Vazirmatn'}, boxWidth:10, color:textColor } } },
+      scales: type==='bar' ? {
+        y:{ beginAtZero:true, ticks:{font:{family:'Vazirmatn'}, color:textColor}, grid:{color:gridColor} },
+        x:{ ticks:{font:{family:'Vazirmatn'}, color:textColor}, grid:{color:gridColor} }
+      } : {}
     }
   });
+}
+// وقتی حالت شب/روز عوض می‌شود، نمودارهای فعال را دوباره با رنگ متن مناسب می‌کشد
+function refreshAllCharts(){
+  if(document.getElementById('view-dashboard')?.classList.contains('active')) renderDashChart();
+  if(document.getElementById('view-by-city')?.classList.contains('active')) renderByCity();
 }
 
 /* ============================================================
@@ -1526,6 +1623,11 @@ function drawChart(canvasId, type, labels, datasets){
 function opLabel(op){ return op==='IN' ? 'ورود' : (op==='OUT' ? 'خروج' : 'اصلاح'); }
 function jsEsc(s){ return String(s).replace(/'/g,"\\'"); }
 
+function clearDateRange(){
+  document.getElementById('hf-date-from').value = '';
+  document.getElementById('hf-date-to').value = '';
+  renderHistory();
+}
 function renderHistory(){
   const citySel = document.getElementById('hf-city');
   fillSelectOnce(citySel, DATA.lists.cities, 'همه‌ی شهرها');
@@ -1533,12 +1635,19 @@ function renderHistory(){
   const city = document.getElementById('hf-city').value;
   const op = document.getElementById('hf-op').value;
   const cat = document.getElementById('hf-cat').value;
+  const dateFrom = document.getElementById('hf-date-from').value; // yyyy-MM-dd
+  const dateTo = document.getElementById('hf-date-to').value;
 
   let rows = DATA.transactions.filter(t=>{
     if(city && normKey(t.city)!==normKey(city)) return false;
     if(op && t.operation!==op) return false;
     if(cat && t.category!==cat) return false;
     if(search && !(String(t.person).toLowerCase().includes(search) || String(t.itemType).toLowerCase().includes(search))) return false;
+    if(dateFrom || dateTo){
+      const txDate = String(t.datetime||'').slice(0,10).replace(/\//g,'-'); // yyyy-MM-dd
+      if(dateFrom && txDate < dateFrom) return false;
+      if(dateTo && txDate > dateTo) return false;
+    }
     return true;
   });
 
@@ -1981,6 +2090,48 @@ if('serviceWorker' in navigator){
 /* ============================================================
    INIT
    ============================================================ */
+/* ============================================================
+   حالت شب / روز
+   ============================================================ */
+const THEME_KEY = 'snapp_warehouse_theme';
+function applyThemeIcons(){
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('theme-icon-dark')?.classList.toggle('hidden', isDark);
+  document.getElementById('theme-icon-light')?.classList.toggle('hidden', !isDark);
+}
+function toggleTheme(){
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if(isDark){
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem(THEME_KEY, 'light');
+  }else{
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem(THEME_KEY, 'dark');
+  }
+  applyThemeIcons();
+  refreshAllCharts(); // چارت‌ها رنگ متن/legend را باید با تم هماهنگ کنند
+}
+applyThemeIcons(); // اولیه؛ خودِ attribute قبلاً در <head> از localStorage تنظیم شده
+
+/* ============================================================
+   اندازه‌ی متن (برای خوانایی بهتر روی موبایل)
+   ============================================================ */
+const FONT_SCALE_KEY = 'snapp_warehouse_font_scale';
+const FONT_SCALE_VALUES = { small: '0.92', normal: '1', large: '1.12' };
+function setFontScale(size){
+  if(!FONT_SCALE_VALUES[size]) size = 'normal';
+  document.documentElement.style.setProperty('--text-scale', FONT_SCALE_VALUES[size]);
+  localStorage.setItem(FONT_SCALE_KEY, size);
+  document.querySelectorAll('.font-size-group .util-btn').forEach((b,i)=>{
+    const map = ['small','normal','large'];
+    b.classList.toggle('active', map[i]===size);
+  });
+}
+(function initFontScale(){
+  const saved = localStorage.getItem(FONT_SCALE_KEY) || 'normal';
+  setFontScale(saved);
+})();
+
 boot();
 </script>
 </body>
