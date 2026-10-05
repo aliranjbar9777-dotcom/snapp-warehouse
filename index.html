@@ -68,9 +68,7 @@
     color-scheme: dark;
   }
   *{box-sizing:border-box;}
-  html{ --text-scale: 1; }
   html,body{height:100%;}
-  body{ zoom: var(--text-scale); }
   body{
     margin:0;
     font-family:'Vazirmatn', sans-serif;
@@ -161,8 +159,6 @@
   }
   .util-btn:hover{ background:var(--surface-2); color:var(--ink); }
   .util-btn svg{ width:15px; height:15px; }
-  .font-size-group{ display:flex; gap:4px; }
-  .font-size-group .util-btn.active{ border-color:var(--brand); color:var(--brand-darker); background:var(--brand-tint); }
 
   /* ---------- Main ---------- */
   .main{ flex:1; min-width:0; padding:26px 30px 60px; }
@@ -582,11 +578,6 @@
           <svg id="theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
           <svg id="theme-icon-light" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         </button>
-        <div class="font-size-group">
-          <button class="util-btn" onclick="setFontScale('small')" title="متن کوچک">A-</button>
-          <button class="util-btn" onclick="setFontScale('normal')" title="متن معمولی">A</button>
-          <button class="util-btn" onclick="setFontScale('large')" title="متن بزرگ">A+</button>
-        </div>
       </div>
       <div class="user-chip">
         <div class="user-avatar" id="user-avatar">؟</div>
@@ -2112,25 +2103,6 @@ function toggleTheme(){
   refreshAllCharts(); // چارت‌ها رنگ متن/legend را باید با تم هماهنگ کنند
 }
 applyThemeIcons(); // اولیه؛ خودِ attribute قبلاً در <head> از localStorage تنظیم شده
-
-/* ============================================================
-   اندازه‌ی متن (برای خوانایی بهتر روی موبایل)
-   ============================================================ */
-const FONT_SCALE_KEY = 'snapp_warehouse_font_scale';
-const FONT_SCALE_VALUES = { small: '0.92', normal: '1', large: '1.12' };
-function setFontScale(size){
-  if(!FONT_SCALE_VALUES[size]) size = 'normal';
-  document.documentElement.style.setProperty('--text-scale', FONT_SCALE_VALUES[size]);
-  localStorage.setItem(FONT_SCALE_KEY, size);
-  document.querySelectorAll('.font-size-group .util-btn').forEach((b,i)=>{
-    const map = ['small','normal','large'];
-    b.classList.toggle('active', map[i]===size);
-  });
-}
-(function initFontScale(){
-  const saved = localStorage.getItem(FONT_SCALE_KEY) || 'normal';
-  setFontScale(saved);
-})();
 
 boot();
 </script>
